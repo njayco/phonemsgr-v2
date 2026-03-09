@@ -48,9 +48,12 @@ The app features a premium futuristic dark theme with neon green and blue accent
 | **Framework** | React Native with Expo SDK 54 |
 | **Language** | TypeScript |
 | **Routing** | Expo Router (file-based routing) |
-| **State** | React Context + AsyncStorage (local persistence) |
+| **Database** | PostgreSQL with Drizzle ORM |
+| **Auth** | Express sessions with connect-pg-simple, scrypt password hashing |
+| **Realtime** | WebSocket (ws package) for live message delivery and presence |
 | **Server State** | TanStack React Query |
 | **Backend** | Express.js (API + landing page server) |
+| **File Uploads** | Multer (avatars, media, attachments) |
 | **Styling** | React Native StyleSheet with custom dark design system |
 | **Fonts** | Inter (400, 500, 600, 700 weights via @expo-google-fonts) |
 | **Animations** | React Native Reanimated |
@@ -64,25 +67,40 @@ The app features a premium futuristic dark theme with neon green and blue accent
 ## Project Structure
 
 ```
+shared/
+└── schema.ts                # Drizzle ORM schema (15 tables) + Zod validation schemas
+
+server/
+├── index.ts                 # Express server entry with session middleware + WebSocket setup
+├── routes.ts                # All API routes (auth, threads, messages, feed, settings, etc.)
+├── storage.ts               # DatabaseStorage class (IStorage interface, all CRUD methods)
+├── db.ts                    # Drizzle database connection pool
+├── auth.ts                  # Password hashing (scrypt) + session auth helpers
+├── websocket.ts             # WebSocket server (user tracking, message broadcast, presence)
+├── uploads.ts               # Multer file upload middleware (avatar, media, attachment)
+├── seed.ts                  # Demo data seeding (6 users, threads, messages, posts)
+└── templates/
+    └── landing-page.html    # Web landing page
+
 app/
-├── _layout.tsx              # Root layout (Auth, Query, Keyboard providers)
-├── index.tsx                # Welcome / landing screen
-├── sign-in.tsx              # Sign in flow
-├── sign-up.tsx              # Sign up flow (phone, username, display name)
+├── _layout.tsx              # Root layout (Auth, QueryClient, Keyboard providers)
+├── index.tsx                # Welcome / landing screen (redirects if authed)
+├── sign-in.tsx              # Sign in with username/password (API-backed)
+├── sign-up.tsx              # Registration with username/password/display name
 ├── +not-found.tsx           # 404 error screen
 ├── pricing.tsx              # Subscription plan selection (modal)
-├── monetization.tsx         # Revenue center (Executive tier)
+├── monetization.tsx         # Revenue center (Executive tier, API-backed)
 ├── offline.tsx              # Mesh mode / offline resilience
-├── settings.tsx             # Privacy, notifications, account settings
+├── settings.tsx             # Privacy, notifications, account settings (API-backed)
 ├── chat/
-│   └── [id].tsx             # Individual chat thread with BEAM send
+│   └── [id].tsx             # Individual chat thread with BEAM send (real messages API)
 └── (tabs)/
-    ├── _layout.tsx          # Bottom tab navigation (5 tabs)
-    ├── index.tsx            # Home dashboard
-    ├── live-field.tsx       # Proximity radar discovery
-    ├── feed.tsx             # Social feed (Buddy/Nearby toggle)
-    ├── messages.tsx         # Chat thread list
-    └── profile.tsx          # User profile with kindness score
+    ├── _layout.tsx          # Bottom tab navigation (5 tabs) + WebSocket connect/disconnect
+    ├── index.tsx            # Home dashboard (kindness score, plan, recent activity)
+    ├── live-field.tsx       # Proximity radar discovery (nearby users API)
+    ├── feed.tsx             # Social feed with like/comment (Buddy/Nearby toggle)
+    ├── messages.tsx         # Chat thread list (real threads from API)
+    └── profile.tsx          # User profile with kindness score + badges
 
 components/
 ├── Avatar.tsx               # Initials-based avatar with optional neon glow
@@ -96,17 +114,61 @@ constants/
 └── colors.ts                # Dark theme color system
 
 lib/
-├── auth-context.tsx         # Authentication provider (AsyncStorage-backed)
-├── mock-data.ts             # Demo data for MVP (users, threads, posts, nearby)
-└── query-client.ts          # React Query client with API utilities
-
-server/
-├── index.ts                 # Express server entry point
-├── routes.ts                # API route registration
-├── storage.ts               # In-memory storage layer
-└── templates/
-    └── landing-page.html    # Web landing page
+├── auth-context.tsx         # Server-backed auth provider (React Query, sessions)
+├── websocket.ts             # WebSocket client (connect, disconnect, auto-reconnect)
+├── query-client.ts          # React Query client with API base URL + default fetcher
+└── mock-data.ts             # Legacy demo data (reference only, not imported by screens)
 ```
+
+---
+
+## Database Schema (PostgreSQL + Drizzle ORM)
+
+Key tables in `shared/schema.ts`:
+
+| Table | Purpose |
+|-------|---------|
+| `users` | Profiles with plan tier, kindness score, reputation |
+| `user_interests` | User interest tags |
+| `user_badges` | Earned badges (Top Contributor, Verified Helper, etc.) |
+| `message_threads` | Chat threads with encryption flag |
+| `thread_participants` | Thread membership with unread counts |
+| `messages` | Individual messages with mesh delivery flag |
+| `feed_posts` | Social feed posts with media types |
+| `feed_comments` | Comments on posts |
+| `feed_reactions` | Post reactions (likes) |
+| `kindness_ledger` | Kindness point history |
+| `buddy_connections` | Friend/buddy relationships |
+| `nearby_presence` | Location-based discovery data |
+| `events` | Hosted events (monetization) |
+| `monetization_settings` | Inbox pricing and event hosting config |
+| `user_settings` | Privacy and notification preferences |
+| `session` | Express session store (connect-pg-simple) |
+
+---
+
+## API Routes
+
+All data routes require session authentication (`req.session.userId`).
+
+| Category | Endpoints |
+|----------|-----------|
+| **Auth** | `POST /api/auth/register`, `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/auth/me` |
+| **Profile** | `GET /api/profile/:id`, `PATCH /api/profile` |
+| **Threads** | `GET /api/threads`, `POST /api/threads`, `GET /api/threads/:id/messages`, `POST /api/threads/:id/messages` |
+| **Feed** | `GET /api/feed`, `POST /api/feed`, `POST /api/feed/:id/like`, `POST /api/feed/:id/comment` |
+| **Kindness** | `GET /api/kindness/history` |
+| **Nearby** | `GET /api/nearby`, `POST /api/nearby/update` |
+| **Settings** | `GET /api/settings`, `PATCH /api/settings` |
+| **Monetization** | `GET /api/monetization`, `PATCH /api/monetization` |
+| **Upload** | `POST /api/upload/avatar`, `POST /api/upload/media`, `POST /api/upload/attachment` |
+
+### Security
+- Thread message routes enforce participant authorization (IDOR protection)
+- WebSocket broadcasts are scoped to thread participants only
+- Settings/monetization updates use allowlisted field validation
+- Upload routes require authentication
+- Session cookies use `secure: true` in production
 
 ---
 
@@ -138,11 +200,12 @@ server/
 ## Features
 
 ### Authentication
-- Phone number input with country code
-- Auto-generated @username (max 14 characters)
-- Display name setup
-- AsyncStorage session persistence
+- Username + password registration and login
+- PostgreSQL-backed sessions with connect-pg-simple
+- Scrypt password hashing (Node.js built-in crypto)
+- Session persistence across page reloads
 - Auth guard on protected routes
+- Demo credentials: `alexchen` / `demo1234`
 
 ### Home Dashboard
 - Current plan badge (Temp/Associate/Executive)
@@ -163,8 +226,8 @@ server/
 - **BEAM** button replaces traditional "Send"
 - Timestamps on every message
 - "Delivered via Local Relay" badge for mesh-delivered messages
-- File attachment button (placeholder)
-- Export chat action (placeholder)
+- WebSocket realtime message delivery
+- Messages persist in PostgreSQL
 
 ### Live Field Discovery
 - Radar visualization with concentric proximity rings
@@ -183,6 +246,7 @@ server/
 - Like/comment/share action row
 - Haptic feedback on interactions
 - Glass card styling per post
+- Posts persist in PostgreSQL
 
 ### Profile
 - Neon-bordered halo avatar
@@ -201,6 +265,7 @@ server/
 - **Revenue Overview** — Bar chart showing monthly revenue growth
 - **Withdraw** button for payout initiation
 - Revenue amount display with "this month" label
+- Settings persist in PostgreSQL
 
 ### Subscription Plans
 
@@ -223,6 +288,7 @@ server/
 - **Privacy Controls**: Ghost mode, interest-based discovery, mutual filtering, see-everyone (premium)
 - **Notifications**: Push, message alerts, feed updates, kindness points
 - **Account**: Subscription management, monetization settings, offline resilience
+- Settings persist in PostgreSQL
 
 ---
 
@@ -230,6 +296,7 @@ server/
 
 ### Prerequisites
 - Node.js 18+
+- PostgreSQL database (auto-provisioned on Replit)
 - Expo Go app on your mobile device (for testing)
 
 ### Installation
@@ -248,6 +315,17 @@ npm run server:dev
 # Start the Expo dev server (port 8081)
 npm run expo:dev
 ```
+
+### Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `DATABASE_URL` | PostgreSQL connection string |
+| `SESSION_SECRET` | Session signing secret |
+| `EXPO_PUBLIC_DOMAIN` | Backend domain for API requests (injected at dev/build time) |
+
+### Demo Data
+On first startup, the database is seeded with 6 demo users, chat threads, messages, and feed posts. Use `alexchen` / `demo1234` to sign in.
 
 ### Testing on Device
 1. Install **Expo Go** from the App Store or Google Play
@@ -311,7 +389,7 @@ The kindness economy rewards positive community behavior:
 
 ## Roadmap
 
-### Phase 1 — MVP (Current)
+### Phase 1 — MVP
 - [x] Authentication flow (phone + username)
 - [x] Home dashboard with kindness score
 - [x] Direct messaging with BEAM send
@@ -325,11 +403,15 @@ The kindness economy rewards positive community behavior:
 - [x] Premium dark futuristic design system
 
 ### Phase 2 — Backend Integration
-- [ ] Supabase authentication (replace AsyncStorage auth)
-- [ ] PostgreSQL data models via Supabase
-- [ ] Supabase Realtime for live message updates
-- [ ] Cloud storage for media uploads
-- [ ] Row-level security policies
+- [x] PostgreSQL database with Drizzle ORM (15 tables)
+- [x] Session-based authentication with scrypt password hashing
+- [x] All REST API routes with session middleware
+- [x] All frontend screens using React Query with real API data
+- [x] WebSocket realtime message delivery (scoped to thread participants)
+- [x] File upload support (avatars, media, attachments)
+- [x] Thread authorization and IDOR protection
+- [x] Allowlisted field validation on settings/monetization updates
+- [x] Demo data seeding (6 users, threads, messages, posts)
 
 ### Phase 3 — Payments & Verification
 - [ ] Stripe integration for subscriptions
@@ -353,28 +435,13 @@ The kindness economy rewards positive community behavior:
 
 ---
 
-## Data Models
-
-The following data types are defined or planned for the full platform:
-
-**Core**: User, Profile, Interest, UserInterest, DeviceSession
-**Messaging**: MessageThread, ThreadParticipant, Message, MessageAttachment
-**Social**: FeedPost, FeedComment, FeedReaction, BuddyConnection
-**Economy**: KindnessLedger, SubscriptionPlan, UserSubscription
-**Discovery**: NearbyPresence, Event, EventTicket
-**Monetization**: MonetizationSetting, RevenueTransaction, ExportJob
-**Offline**: OfflineRelayNode, OfflineMessageQueue, Notification
-
-**Enums**: PlanTier, MessageStatus, VisibilityMode, FeedAudience, TransactionType, ExportFormat, ConnectivityMode, NotificationType
-
----
-
 ## Scripts
 
 | Command | Description |
 |---------|-------------|
 | `npm run expo:dev` | Start Expo development server (port 8081) |
 | `npm run server:dev` | Start Express backend server (port 5000) |
+| `npm run db:push` | Push Drizzle schema to PostgreSQL |
 | `npm run lint` | Run ESLint |
 | `npm run lint:fix` | Auto-fix lint issues |
 
@@ -386,6 +453,7 @@ The following data types are defined or planned for the full platform:
 - **React Native**: 0.81.5
 - **TypeScript**: 5.9
 - **Node.js**: 18+
+- **PostgreSQL**: Replit built-in
 
 ---
 

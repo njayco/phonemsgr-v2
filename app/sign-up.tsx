@@ -38,7 +38,7 @@ export default function SignUpScreen() {
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       await signUp(username.trim(), displayName.trim(), phone.trim(), password);
-      router.replace('/(tabs)');
+      router.replace('/');
     } catch (err: any) {
       const msg = err.message?.includes('409')
         ? 'Username already taken'

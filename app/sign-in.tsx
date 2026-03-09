@@ -31,7 +31,7 @@ export default function SignInScreen() {
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       await signIn(username.trim(), password);
-      router.replace('/(tabs)');
+      router.replace('/');
     } catch (err: any) {
       const msg = err.message?.includes('401')
         ? 'Invalid username or password'

@@ -1,0 +1,789 @@
+Build “Phone Msgr” as a serious React Native mobile app MVP for Denoko Inc., using the attached Genspark mockups as the visual source of truth for product design, screen hierarchy, UX tone, and premium visual language.
+
+IMPORTANT:
+Do not build this as a web app.
+Build this as a React Native mobile application using Expo and TypeScript, optimized for rapid MVP development in Replit while keeping the architecture clean enough to scale later.
+
+This is not a fake clickable concept.
+Generate a real mobile-first Expo project foundation with:
+- clean architecture
+- reusable UI system
+- navigation flow
+- scalable state management
+- Supabase backend integration strategy
+- local offline caching strategy
+- phased product roadmap
+- polished screen scaffolds
+- mock service layers for advanced features not yet fully implemented
+
+The output should prioritize:
+1. fastest realistic time to market
+2. premium visual quality matching the mockups
+3. believable messaging and local-social flows
+4. future-ready resilience/offline architecture
+5. clear upgrade paths for native mesh, monetization, and export tools
+
+PRODUCT NAME:
+Phone Msgr
+
+TAGLINE:
+The Kindness-Based Social Messenger for Real Life — Online or Offline
+
+ONE-SENTENCE PRODUCT DESCRIPTION:
+Phone Msgr is a kindness-based social messenger that helps people connect locally, communicate securely, and stay reachable online or offline.
+
+ONE-SENTENCE BUSINESS MODEL:
+Phone Msgr makes money through premium subscriptions, monetized messaging and events, utility fees, and an optional offline resilience add-on.
+
+PRIMARY PRODUCT GOALS:
+1. Reward kindness
+2. Facilitate real-life local connections
+3. Enable creator/business monetization
+4. Preserve communication during internet disruption
+5. Deliver a premium futuristic mobile messaging experience
+
+PLATFORM REQUIREMENT:
+Build with React Native using Expo.
+
+RECOMMENDED MVP STACK:
+- React Native
+- Expo
+- TypeScript
+- React Navigation
+- NativeWind for styling
+- Zustand for app/client state
+- TanStack Query for async/server state
+- React Hook Form + Zod for forms and validation
+- React Native Gifted Chat for message UI foundation, customized heavily to match the Phone Msgr aesthetic
+- Supabase for authentication, PostgreSQL database, storage, and realtime subscriptions
+- Expo Location for Live Field discovery architecture
+- Expo SecureStore for token/session persistence
+- Expo Notifications for push-notification-ready architecture
+- Expo FileSystem and Expo Sharing for export placeholders
+- Expo SQLite for local caching and offline queue simulation
+- React Native Reanimated for premium animations
+- react-native-chart-kit or Victory Native for revenue charts
+- Sentry for error monitoring
+- Stripe-ready service abstraction for subscriptions and monetization
+- Twilio-ready abstraction for future phone OTP
+- future native module abstraction for BitChat/offline mesh integration
+
+IMPORTANT ARCHITECTURE DECISIONS:
+- Use Supabase as the default backend for fastest MVP delivery in Replit
+- Use PostgreSQL data models through Supabase
+- Use Supabase Realtime for initial live updates where helpful
+- Use Expo SQLite for local cache, pending actions, and offline message queue simulation
+- Use Gifted Chat to accelerate messaging screen delivery, but restyle it heavily so it feels custom and premium
+- Do NOT require a custom Node.js/Express/WebSocket backend in phase 1 unless absolutely necessary
+- Leave clean service boundaries so a future custom backend using Socket.IO or raw WebSockets can replace or augment Supabase later
+
+DO NOT DO THIS:
+- do not pretend Expo already provides true Bluetooth mesh networking
+- do not fake production-grade E2EE claims if keys are not really implemented
+- do not overengineer phase 1 with unnecessary microservices
+- do not ship broken half-features when polished simulations are better
+
+IF A FEATURE IS NOT FULLY POSSIBLE IN EXPO TODAY:
+- build polished UI and flow
+- create service interfaces
+- simulate the state
+- add TODO comments for future native implementation
+
+USE THE ATTACHED MOCKUPS AS VISUAL SOURCE OF TRUTH FOR:
+- futuristic dark theme
+- neon blue and green lighting
+- glassmorphism cards
+- premium social-tech aesthetic
+- rounded iPhone-inspired layouts
+- radar/proximity screens
+- monetization dashboard
+- cinematic onboarding and pricing experience
+
+VISUAL DESIGN SYSTEM:
+Create a mobile design system with:
+- deep black / charcoal background palette
+- electric blue accent for messaging/actions
+- neon green accent for kindness/resilience/online state
+- subtle glass cards
+- soft border strokes
+- glowing CTA buttons
+- rounded panels
+- readable typography
+- premium sci-fi consumer app feel
+
+APP CONCEPT:
+Phone Msgr is:
+- a messaging app
+- a local social network
+- a kindness economy
+- a monetization platform
+- a disaster-resilient communication tool
+
+KEY PRODUCT PILLARS:
+1. Messaging & identity
+2. Live Field local discovery
+3. Phone Feed social content
+4. Kindness economy
+5. Monetization center
+6. Offline resilience layer powered later by a BitChat-based protocol
+
+APP NAVIGATION:
+Use React Navigation with:
+- bottom tab navigator for main app areas
+- native stack navigator for auth, onboarding, chat thread, pricing, settings, modals
+
+MAIN TAB NAVIGATION:
+- Home
+- Live Field
+- Feed
+- Messages
+- Profile
+
+STACK / MODAL SCREENS:
+- Welcome
+- Sign In
+- Sign Up
+- Onboarding
+- Interest Selection
+- Location Permission
+- Chat Thread
+- Pricing / Upgrades
+- Monetization Settings
+- Event Creation
+- Export / Archive Modal
+- Offline Status Details
+- Privacy Controls
+- Notifications
+- Subscription Management
+
+SCREENS TO BUILD:
+
+1. AUTH / ONBOARDING FLOW
+Create:
+- Welcome screen
+- Sign up screen
+- Sign in screen
+- Profile setup screen
+- Interest selection screen
+- Location permission explainer
+- optional upgrade intro screen
+
+Signup should support:
+- phone number input
+- auto-generated +username (max 14 chars)
+- display name
+- optional profile photo
+- interest tags
+- location permission consent
+- starter privacy settings
+
+For MVP:
+- support mock OTP flow OR email-based/dev-mode auth
+- structure code for future Twilio Verify integration
+- include TODO hooks for real phone verification
+
+2. HOME / DASHBOARD SCREEN
+Build a premium overview screen with:
+- quick status card
+- current plan
+- kindness score preview
+- recent messages
+- nearby people count
+- latest feed activity
+- monetization summary for Executive users
+- offline resilience status card
+
+3. MESSAGES LIST SCREEN
+Build:
+- thread list
+- search
+- unread indicators
+- profile thumbnails
+- online/offline chips
+- polished message preview rows
+- realtime-ready architecture using Supabase subscriptions where practical
+
+4. CHAT THREAD SCREEN
+Use React Native Gifted Chat as the base, but customize it heavily to match the mockups:
+- dark futuristic message screen
+- blue outgoing bubbles
+- dark glass incoming bubbles
+- timestamps
+- encrypted status chip
+- online mode / mesh mode chip
+- “BEAM” button instead of “Send”
+- attachment button
+- export chat action
+- local relay delivery badge for simulated offline mode
+- optional file/document attachment row
+- keyboard-safe layout
+- virtualized chat performance
+- prepare for long thread performance
+
+5. LIVE FIELD SCREEN
+Build a radar/proximity discovery screen inspired by the mockup:
+- glowing radius visualization
+- nearby avatars placed around a central user
+- toggle between Buddy Feed and Nearby Feed
+- user distance labels
+- shared interest chips
+- bottom card showing nearby count
+- actions: add buddy, message, view profile
+
+For MVP:
+- use Expo Location permission flow
+- use seeded or simulated geo data
+- calculate nearby users from demo coordinates
+- allow subscription tiers to affect discovery radius
+- make it visually impressive and believable
+
+6. PHONE FEED SCREEN
+Build a timeline with tabs:
+- Buddy Feed
+- Nearby Feed
+
+Feed post types supported in UI:
+- text
+- image
+- video
+- audio
+- deck/document placeholder
+- event card
+
+Each post supports:
+- user info
+- timestamp
+- kindness earned badge
+- likes
+- comments
+- kind comment emphasis
+- monetized content marker
+- premium glass card styling
+
+7. PUBLIC PROFILE SCREEN
+Build a profile screen inspired by the mockups:
+- halo avatar with neon ring
+- @username
+- lifetime kindness score
+- reputation level bar
+- badges
+- connection stats
+- messages count
+- events count
+- recent activity list
+- buddy request button
+- message button
+- monetization badge if Executive
+
+8. MONETIZATION CENTER SCREEN
+Inspired by the mockup:
+- inbox pricing module
+- event hosting module
+- creator subscriptions / premium content module
+- revenue overview chart
+- withdraw CTA
+- current monthly revenue
+- monetization settings toggles
+
+Model support for:
+- inbound paid messages
+- paid events
+- creator subscriptions
+- platform fee logic
+- payout abstraction
+
+Do not overbuild payouts in phase 1.
+Create the UI, data models, and service abstraction first.
+
+9. PRICING / SUBSCRIPTIONS SCREEN
+Create a polished pricing screen matching the mockup feel:
+
+Temp Plan — Free
+- Basic messaging
+- Live Field 400m
+- Kindness points
+- Phone Feed
+- Cable utility access
+
+Associate — $9.99/month
+- 1km Live Field
+- Buddy requests
+- Double kindness earnings
+- Ghost mode
+- Basic BEAM
+- Free events
+- Ad-free
+- Verified badge
+
+Executive — $19.99/month
+- 5km Live Field
+- Monetized messaging
+- Paid events
+- BEAM business export
+- Profile boost
+- Premium support
+- AirDrop Pro
+
+Offline Resilience Plan — $29.99/year add-on
+- Offline mesh messaging
+- Emergency broadcast
+- Offline file transfer
+- Local message relay
+- Encrypted offline routing
+
+10. OFFLINE RESILIENCE SCREEN
+Build a dedicated screen explaining and simulating:
+- internet connection lost
+- mesh mode active
+- nearby relays available
+- queued messages
+- delivered via local relay states
+- upgrade CTA for resilience plan
+
+IMPORTANT:
+In Expo MVP, this should be a simulated architecture layer backed by local queue/cache logic.
+Do not claim full real Bluetooth mesh networking is implemented.
+
+11. SETTINGS / PRIVACY SCREEN
+Build settings for:
+- ghost mode
+- visibility radius
+- interest-based discovery
+- mutual filtering
+- see-everyone premium mode
+- export preferences
+- notification settings
+- monetization settings
+- subscription management
+- offline resilience plan status
+
+CORE MVP FEATURES TO MODEL:
+
+A. Messaging & Identity
+- user accounts
+- phone-number-based identity structure
+- auto-generated +username
+- direct messaging
+- thread list
+- BEAM send action
+- export action placeholder
+- online/offline state chip
+- E2EE-ready abstraction, but honest MVP implementation notes
+
+B. BEAM Messaging
+“BEAM” replaces “Send”
+Add:
+- export thread placeholder
+- archive conversation placeholder
+- business-style export mode selector
+- file/document attachment placeholder
+Use clean service abstractions for future .docx/PDF export.
+
+C. Phone Feed
+Model:
+- posts
+- comments
+- reactions
+- media attachments
+- audience type
+- kindness rewards
+- realtime updates where helpful through Supabase
+
+D. Kindness Economy
+Implement models for:
+- +10 for kind comments
+- +10 bonus per like on kind comments
+- +100 kindness budget per post
+- -10 for harmful comment transferred to impacted user in demo logic only
+
+Display:
+- lifetime kindness score
+- kindness earned on posts
+- reputation progress
+
+Add clear TODO notes:
+real moderation, abuse detection, and reputation integrity protections are needed before production release.
+
+E. Live Field
+- proximity graph/radar
+- nearby discovery
+- distance labels
+- interest chips
+- profile quick actions
+- subscription-based radius control
+
+F. Privacy Controls
+Support UI and models for:
+- ghost mode
+- interest-only visibility
+- mutual filtering
+- see-everyone premium mode
+- radius limits by plan
+
+G. Monetization Tools
+Executive users can:
+- set inbound message pricing
+- host paid events
+- offer subscriptions
+- sell premium experiences
+- view revenue dashboard
+
+H. Utility Features
+Design and stub:
+- Cable (fax-like utility) — $1.99 per send
+- AirDrop-style file sharing
+- Nudge interaction
+- Offline file transfer
+
+OFFLINE / LOCAL-FIRST REQUIREMENTS:
+Use Expo SQLite and local state to simulate resilient app behavior:
+- cache recent messages
+- cache feed data
+- store queued outbound messages
+- store pending reactions/comments
+- sync pending actions when network returns
+- provide UI feedback for pending vs synced state
+
+ADVANCED OFFLINE / BITCHAT INTEGRATION PLAN:
+Phone Msgr MVP should be architected so it can later integrate a BitChat-based offline protocol in a more native build.
+
+Create a clean abstraction layer such as:
+- src/modules/offline/types.ts
+- src/modules/offline/meshService.ts
+- src/modules/offline/protocolAdapter.ts
+- src/modules/offline/offlineQueue.ts
+- src/modules/offline/statusMachine.ts
+
+Include types/interfaces for:
+- relay node
+- queued message
+- delivery status
+- connectivity mode
+- nearby peer
+- failover event
+
+Connectivity modes:
+- online
+- degraded
+- offline-mesh
+- reconnecting
+
+Simulate:
+- internet loss
+- switch to mesh mode
+- nearby relays found
+- queued message delivery
+- delivered via local relay status
+
+In the README, clearly explain:
+- Expo MVP simulates resilience mode
+- future native builds can integrate actual Bluetooth / WiFi Direct mesh routing
+- BitChat fork strategy belongs to later native/offline phase
+- Phone Msgr is a resilience communication product, not a political tool
+
+BACKEND STRATEGY:
+Default backend: Supabase
+
+Use Supabase for:
+- auth
+- PostgreSQL tables
+- storage
+- realtime subscriptions
+- row-level security planning
+- user profiles
+- messages
+- feed posts
+- monetization settings
+- subscriptions metadata
+
+Design the code so a later custom backend can be plugged in for:
+- higher-scale messaging
+- dedicated websocket infrastructure
+- advanced event streaming
+- enterprise export processing
+- advanced moderation
+- billing orchestration
+
+DATA MODELS / TABLES TO DEFINE:
+Create frontend and backend-ready types for:
+- User
+- Profile
+- Interest
+- UserInterest
+- SubscriptionPlan
+- UserSubscription
+- MessageThread
+- ThreadParticipant
+- Message
+- MessageAttachment
+- FeedPost
+- FeedComment
+- FeedReaction
+- KindnessLedger
+- BuddyConnection
+- NearbyPresence
+- Event
+- EventTicket
+- MonetizationSetting
+- RevenueTransaction
+- ExportJob
+- OfflineRelayNode
+- OfflineMessageQueue
+- DeviceSession
+- Notification
+
+Enums:
+- PlanTier
+- MessageStatus
+- VisibilityMode
+- FeedAudience
+- TransactionType
+- ExportFormat
+- ConnectivityMode
+- NotificationType
+
+SEEDED DEMO USERS:
+Create demo users inspired by the mockups:
+- Alex Chen
+- Barbara Whitehead
+- Mia Stardust
+- Leo Wave
+- Chloe Innovate
+
+Each should have:
+- display name
+- username
+- avatar placeholder
+- interests
+- kindness score
+- monetization settings where applicable
+- sample feed posts
+- nearby coordinates
+- sample chat threads
+
+STATE MANAGEMENT PLAN:
+Use Zustand stores for:
+- auth state
+- app session
+- chat UI state
+- live field state
+- feed filters
+- subscription state
+- offline connectivity simulation
+- monetization state
+- notification state
+
+Use TanStack Query for:
+- fetching threads
+- fetching messages
+- fetching feed
+- fetching nearby users
+- fetching profile data
+- subscription data
+- monetization dashboard
+- events
+
+OPTIONAL ACCELERATION NOTE:
+If it helps speed to market, structure the architecture so a future “build vs buy” swap is possible for messaging infrastructure.
+Do not implement Stream or Sendbird now, but organize services so Phone Msgr could later replace custom chat transport or Supabase realtime with a commercial SDK if growth requires it.
+
+PERFORMANCE REQUIREMENTS:
+- use Hermes-friendly patterns
+- optimize chat and feed with virtualized lists
+- avoid unnecessary rerenders
+- keep component boundaries clean
+- use image caching strategy where practical
+- use lightweight animations
+- design for scalable message history and feed rendering
+
+ERROR MONITORING:
+Integrate Sentry setup placeholders and README notes for:
+- crash reporting
+- performance monitoring
+- release tracking
+
+PROJECT STRUCTURE:
+Generate a clean Expo React Native structure like:
+
+src/
+  assets/
+  components/
+    ui/
+    chat/
+    feed/
+    liveField/
+    profile/
+    monetization/
+    offline/
+  features/
+    auth/
+    onboarding/
+    messages/
+    feed/
+    liveField/
+    profile/
+    monetization/
+    subscriptions/
+    settings/
+    offline/
+  navigation/
+  services/
+    supabase/
+    auth/
+    chat/
+    feed/
+    monetization/
+    offline/
+    export/
+    notifications/
+  store/
+  hooks/
+  lib/
+  theme/
+  types/
+  constants/
+  mocks/
+  database/
+
+Create reusable UI components such as:
+- GlowCard
+- NeonButton
+- StatusPill
+- BeamButton
+- MessageBubble
+- LiveFieldRadar
+- UserOrbitNode
+- KindnessScoreCard
+- RevenueChartCard
+- PlanCard
+- GlassTabBar
+- MeshModeBanner
+- ProfileHalo
+- FeedMediaCard
+- EmptyStatePanel
+
+CHAT IMPLEMENTATION NOTE:
+Use React Native Gifted Chat to accelerate the base chat experience, but:
+- reskin it heavily
+- customize bubbles, composer, send button, timestamps, and system states
+- rename send action to BEAM
+- make the result feel like a custom premium product, not a default Gifted Chat demo
+
+README REQUIREMENTS:
+Generate a strong README that explains:
+1. what Phone Msgr is
+2. how it works
+3. how it makes money
+4. why offline resilience matters
+5. why Supabase was chosen for MVP speed
+6. where Expo helps and where it limits native mesh features
+7. architecture overview
+8. setup steps
+9. environment variables
+10. next build priorities
+11. roadmap phases
+
+MVP ROADMAP TO INCLUDE IN README:
+
+Phase 1 — Mobile Foundation
+- onboarding
+- auth
+- profiles
+- message list
+- chat
+- feed
+- live field demo
+- pricing
+- kindness score basics
+- local caching
+
+Phase 2 — Monetization
+- subscriptions
+- paid inbox
+- event hosting
+- creator monetization
+- revenue dashboard
+- export flow stub
+
+Phase 3 — Resilience Layer
+- offline queue polish
+- native bridge strategy
+- BitChat fork planning
+- file transfer
+- emergency broadcast
+- mesh failover experimentation
+
+Phase 4 — Trust & Scale
+- moderation
+- anti-abuse systems
+- verification
+- analytics
+- business tools
+- export engine
+- possible custom realtime backend
+
+ENVIRONMENT VARIABLES TO PLAN FOR:
+- EXPO_PUBLIC_SUPABASE_URL
+- EXPO_PUBLIC_SUPABASE_ANON_KEY
+- EXPO_PUBLIC_MAPBOX_TOKEN
+- EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY
+- EXPO_PUBLIC_SENTRY_DSN
+- EXPO_PUBLIC_APP_ENV
+- SUPABASE_SERVICE_ROLE_KEY
+- STRIPE_SECRET_KEY
+- TWILIO_ACCOUNT_SID
+- TWILIO_AUTH_TOKEN
+- TWILIO_VERIFY_SERVICE_SID
+- EXPORT_SERVICE_URL
+
+REQUIRED PACKAGES TO PLAN FOR:
+- @react-navigation/native
+- @react-navigation/bottom-tabs
+- @react-navigation/native-stack
+- react-native-screens
+- react-native-safe-area-context
+- zustand
+- @tanstack/react-query
+- react-hook-form
+- zod
+- @hookform/resolvers
+- react-native-gifted-chat
+- nativewind
+- expo-location
+- expo-sqlite
+- expo-secure-store
+- expo-notifications
+- expo-file-system
+- expo-sharing
+- react-native-reanimated
+- react-native-svg
+- react-native-chart-kit or victory-native
+- @supabase/supabase-js
+- sentry-expo or current Sentry Expo package
+
+IMPORTANT IMPLEMENTATION RULES:
+- prioritize believable MVP quality over theoretical completeness
+- optimize for Replit compatibility and fast iteration
+- use mock data where backend is not fully connected
+- match the uploaded mockups closely
+- create polished placeholder flows rather than broken complex features
+- clearly separate implemented features from future native capabilities
+- add meaningful TODOs for Twilio OTP, Stripe billing, true E2EE, document export, real mesh networking, and advanced moderation
+
+SUCCESS CRITERIA:
+The output should give me:
+1. a serious Expo/React Native startup-grade project foundation
+2. screens closely matching the mockups
+3. a future-ready architecture for BitChat/native offline integration
+4. believable demo flows for messaging, live field, feed, profile, monetization, and pricing
+5. a README that clearly explains the product, business model, and roadmap
+6. the fastest credible path to market for an MVP built in Replit
+
+At the end, print:
+- project folder structure
+- setup steps
+- required packages
+- environment variables
+- recommended first 10 development tasks
+
+Now generate the complete Replit-ready React Native / Expo project scaffold, architecture plan, navigation, starter screens, reusable components, mock data, local cache strategy, Supabase integration plan, and README.

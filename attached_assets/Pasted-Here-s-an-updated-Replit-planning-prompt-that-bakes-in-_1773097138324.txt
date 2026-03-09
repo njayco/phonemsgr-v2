@@ -1,0 +1,404 @@
+Here’s an updated **Replit planning prompt** that bakes in the new features and also respects the current repo structure, Expo app, Express backend, Drizzle/Postgres schema, and WebSocket setup you already have.
+
+```text
+Edit and extend the existing “Phone Msgr 2026” React Native + Expo + Express + PostgreSQL codebase in this Replit project.
+
+IMPORTANT:
+This is not a greenfield rebuild.
+This is a planning-and-implementation prompt for the CURRENT repository and architecture already in place.
+
+You must work WITH the existing stack and file structure, not replace it unnecessarily.
+
+CURRENT STACK / REPO CONTEXT:
+- React Native with Expo SDK 54
+- Expo Router (file-based routing)
+- TypeScript
+- Express backend
+- PostgreSQL with Drizzle ORM
+- WebSocket realtime messaging
+- TanStack React Query
+- Multer file uploads
+- expo-location already available for Live Field
+- existing routes for auth, threads, messages, feed, nearby, settings, monetization
+- existing UI system includes GlassCard, GlowButton, StatusChip, Avatar
+- current app already has screens for:
+  - welcome
+  - sign-in
+  - sign-up
+  - pricing
+  - monetization
+  - offline
+  - settings
+  - chat/[id]
+  - tabs: home, live-field, feed, messages, profile
+
+GOAL:
+Plan and implement the next feature expansion for Phone Msgr so the current app becomes more useful, more social, and more location-aware while staying consistent with the premium futuristic dark UI.
+
+DO NOT:
+- rewrite the whole app from scratch
+- replace Expo Router with another navigation system
+- replace Drizzle/PostgreSQL with Supabase
+- break current auth, realtime messaging, or existing API route patterns
+- invent architecture that ignores the existing repository
+- remove the current design language
+
+INSTEAD:
+- inspect the current structure
+- preserve existing conventions
+- add or modify schema, routes, hooks, components, and screens carefully
+- update README and replit.md to reflect the new functionality
+- leave TODO comments where deeper production logic is still needed
+
+NEW FEATURES TO PLAN AND BUILD
+
+1. NEW MESSAGE COMPOSER / USER SEARCH FLOW
+Add a feature so users can start a new direct message by searching for people from the database using any of these fields:
+- display name
+- @username
+- +phone number
+
+REQUIREMENTS:
+- Add a “new message” entry point from the Messages screen
+- Open a search interface / compose screen / modal
+- Search against users in the database by:
+  - display_name
+  - username
+  - phone_number
+- Support partial matching
+- Normalize searches so:
+  - searching “alex”
+  - searching “@alexchen”
+  - searching “+15551234567”
+  can all work sensibly
+- Show results with:
+  - profile picture / avatar
+  - display name
+  - @username
+  - online/offline status
+- Tapping a result should:
+  - create a thread if none exists
+  - or reuse existing thread if one already exists between the two users
+  - then navigate to chat/[id]
+
+BACKEND CHANGES:
+- Add or update API endpoint(s) for user search, for example:
+  - GET /api/users/search?q=
+- Ensure auth is required
+- Prevent exposing unnecessary private user data
+- Return only safe public fields
+- Add server-side normalization for @username and +phone queries
+- Reuse current storage and route patterns
+
+DATABASE / SCHEMA NOTES:
+- Make sure users table supports efficient searching by:
+  - display name
+  - username
+  - phone number
+- Add indexes if necessary
+- Update Zod validation if needed
+
+2. FEED MEDIA POSTING + BUDDY / NEARBY DISTRIBUTION
+Expand the feed so users can create media posts and have them appear in the correct feed contexts.
+
+MEDIA TYPES TO SUPPORT:
+- image
+- video
+- audio
+- document / deck placeholder if already supported
+- text with optional media
+
+REQUIREMENTS:
+- Add a proper “create post” flow from Feed
+- Allow selecting/uploading media
+- Save uploaded media with the existing upload infrastructure
+- Persist post metadata in PostgreSQL
+- Ensure a user’s created post populates:
+  - on their own Buddy feed
+  - on their buddies’ Buddy feeds
+  - on Nearby feed where relevant based on location presence logic
+
+IMPORTANT FEED LOGIC:
+- Buddy Feed should show:
+  - the current user’s posts
+  - posts from accepted buddies / buddy connections
+- Nearby Feed should show:
+  - the current user’s own posts if desired for continuity
+  - posts from nearby users who fall within the radius logic
+- Posts with media should render with proper cards and previews depending on media type
+
+BACKEND CHANGES:
+- Update feed create endpoint and feed retrieval logic
+- Ensure feed queries can distinguish:
+  - buddy feed
+  - nearby feed
+- Reuse existing tables if possible
+- Extend feed_posts schema only where needed:
+  - media type
+  - media URL
+  - maybe thumbnail URL
+  - visibility / audience metadata if helpful
+
+UI / UX:
+- Build a polished composer modal or screen
+- Preserve the dark premium glassmorphism style
+- Show upload progress / pending state where practical
+- Support preview before posting
+- Leave TODOs for advanced background upload optimizations if not yet implemented
+
+3. LIVE FIELD GPS INTEGRATION WITH BUDDY + NEARBY SEPARATION
+Upgrade Live Field so it uses actual GPS/location integration architecture more clearly.
+
+NEW BEHAVIOR:
+- Users in the signed-in user’s buddy list should appear in the 400m geofence/radius when they are physically within that radius
+- Other users who are not buddies but are within radius should appear in the Nearby field
+- Live Field should reflect actual current geofence logic using expo-location and the nearby_presence table / API
+- Buddy Feed toggle and Nearby Feed toggle must clearly separate:
+  - buddies within radius
+  - non-buddy nearby users within radius
+
+REQUIREMENTS:
+- Use expo-location to obtain current user coordinates
+- Update location to backend using the existing nearby/update route pattern
+- Use backend calculations or query filtering to determine:
+  - buddies within 400m
+  - non-buddy nearby users within 400m
+- Keep premium plan extensibility in mind for future wider radii
+- Preserve the radar visualization
+- Improve the state model so it clearly supports:
+  - buddyNearbyUsers
+  - nearbyUsers
+  - radiusMeters
+  - online/offline presence
+  - last seen if useful
+
+BACKEND CHANGES:
+- Improve GET /api/nearby and/or add query params such as:
+  - type=buddy
+  - type=nearby
+  - radius=400
+- Use proper distance calculations based on saved coordinates
+- Join buddy_connections with nearby_presence where needed
+- Only show safe public profile data
+
+UI CHANGES:
+- On Live Field screen, maintain the toggle between Buddy Feed and Nearby Feed
+- When Buddy view is active:
+  - show only buddies inside the radius
+- When Nearby view is active:
+  - show non-buddy nearby users inside the radius
+- Show:
+  - avatar
+  - display name
+  - distance label
+  - shared interests
+  - online/offline status if available
+
+4. TAP “PEOPLE NEARBY” BOTTOM BAR TO OPEN A NEARBY PEOPLE LIST
+Enhance the bottom button/card that shows the number of people nearby.
+
+NEW BEHAVIOR:
+- If the user taps the bottom bar/button that says something like “6 people nearby”
+- Open a list view, bottom sheet, modal, or push screen showing all nearby people in that category
+
+LIST VIEW MUST SHOW:
+- profile picture / avatar
+- display name
+- @username if useful
+- online/offline status
+- distance in meters
+- optional shared interests
+- tap action to:
+  - view profile
+  - message user
+  - add buddy if not already connected
+
+IMPORTANT:
+- In Buddy mode, the list should show nearby buddies
+- In Nearby mode, the list should show nearby non-buddy users
+- Keep the UI premium and consistent with the current design system
+
+5. ONLINE / OFFLINE PRESENCE IMPROVEMENTS
+Presence should feel more useful across messaging and live discovery.
+
+REQUIREMENTS:
+- Show online/offline status in:
+  - message search results
+  - nearby people list
+  - live field nodes if possible
+  - thread list where useful
+- Reuse current websocket presence infrastructure
+- If available, add “last seen” architecture but keep it optional if not already present
+
+BACKEND NOTES:
+- If presence is already tracked in websocket.ts, expose it safely where useful
+- Do not leak private data
+- Keep the public presence payload minimal
+
+6. README + DOCUMENTATION UPDATE
+After planning and implementing the above, update:
+- README.md
+- replit.md
+
+Document:
+- new user search / new message flow
+- feed media posting and distribution logic
+- buddy vs nearby Live Field logic
+- nearby people list interaction
+- location/GPS integration behavior
+- any new routes, schema changes, and indexes
+- any known limitations and TODOs
+
+IMPLEMENTATION DETAILS
+
+A. REPO-AWARE FILES TO REVIEW AND UPDATE
+Work with the existing structure and update the most relevant files, likely including:
+
+shared/
+- schema.ts
+
+server/
+- routes.ts
+- storage.ts
+- websocket.ts
+- uploads.ts
+- seed.ts
+- db.ts if needed
+
+app/
+- (tabs)/messages.tsx
+- chat/[id].tsx
+- (tabs)/feed.tsx
+- (tabs)/live-field.tsx
+- maybe new route such as:
+  - app/new-message.tsx
+  - app/nearby-list.tsx
+  - app/create-post.tsx
+  or modal/sheet routes consistent with Expo Router
+
+components/
+- Avatar.tsx
+- StatusChip.tsx
+- GlassCard.tsx
+- plus any new reusable components needed
+
+lib/
+- query-client.ts
+- websocket.ts
+- auth-context.tsx
+- any hooks or helpers needed for search, nearby presence, feed posting
+
+B. API / ROUTE CHANGES TO ADD
+Add and document endpoints such as:
+
+- GET /api/users/search?q=
+  Search users by display name, username, or phone number
+
+- POST /api/threads/start
+  Start or reuse a direct message thread with another user
+
+- GET /api/nearby?type=buddy&radius=400
+- GET /api/nearby?type=nearby&radius=400
+  Return nearby buddies or nearby non-buddies
+
+If better aligned with existing route patterns, you may integrate these into current endpoints instead of creating duplicates, but the functionality must exist clearly.
+
+C. DATABASE / STORAGE EXPECTATIONS
+Use the existing Drizzle schema and PostgreSQL database.
+Only add tables/columns if truly necessary.
+
+Likely schema enhancements:
+- ensure users has searchable phone_number and display_name fields
+- improve feed_posts media metadata fields
+- optionally enhance nearby_presence freshness / timestamp fields
+- optionally add indexes for:
+  - username
+  - display_name
+  - phone_number
+  - nearby_presence coordinates/time
+  - buddy_connections lookups
+
+D. FEED BUSINESS RULES
+Implement feed visibility rules clearly:
+
+Buddy Feed:
+- show my posts
+- show posts from accepted buddies
+
+Nearby Feed:
+- show nearby users’ posts within radius
+- optionally include my own posts for continuity
+
+Media posting:
+- uploaded media should render correctly
+- use existing upload endpoints where possible
+- maintain current kindness / like / comment interactions
+
+E. LIVE FIELD BUSINESS RULES
+Live Field must now support:
+- actual device location permission flow
+- current location update to backend
+- retrieval of buddy users within radius
+- retrieval of non-buddy users within radius
+- radar visualization from those results
+- tap-through to people list
+
+F. UX / DESIGN REQUIREMENTS
+Maintain the current Phone Msgr aesthetic:
+- premium futuristic dark mode
+- neon blue and green accents
+- glassmorphism panels
+- sleek rounded cards
+- smooth animations
+- readable typography
+- iPhone-like premium visual feel
+
+Do not downgrade the design to generic admin UI.
+
+G. PERFORMANCE / SAFETY REQUIREMENTS
+- debounce search input for user search
+- paginate or cap results where appropriate
+- protect search endpoints with auth
+- do not expose private phone numbers unless product design explicitly requires showing a matched number safely
+- avoid duplicate thread creation
+- ensure nearby queries are efficient
+- keep uploads authenticated
+- preserve current security patterns
+
+H. TODO / FUTURE NOTES TO LEAVE
+Where appropriate, leave TODO comments for future production improvements:
+- stronger phone number verification via Twilio
+- more advanced geospatial indexing
+- post privacy controls
+- background location updates
+- richer media previews and transcoding
+- push notifications for nearby buddy presence
+- full last-seen presence support
+- moderation and abuse prevention for feed uploads
+
+EXPECTED OUTPUT
+Generate a repo-aware implementation plan and code updates for the CURRENT project that include:
+
+1. schema changes
+2. storage interface/database updates
+3. API route additions/changes
+4. frontend screen changes
+5. any new screens/routes needed
+6. reusable components needed
+7. query hooks/state updates
+8. README and replit.md updates
+9. seed data updates if necessary
+10. clear notes on what was implemented vs what remains TODO
+
+SUCCESS CRITERIA
+The updated app should let a user:
+- search display names, @usernames, or +phone numbers to start a new message
+- create media posts that appear correctly in Buddy and Nearby feed contexts
+- use GPS-backed Live Field logic to separate buddies-in-radius from nearby non-buddies
+- tap the nearby count button and see a clean list of nearby people with avatars and online/offline status
+- do all of this without breaking the current Phone Msgr architecture, theme, or repo conventions
+
+Now inspect the existing repository, extend the current codebase accordingly, and produce the implementation plan plus the actual code changes in the style of this project.
+```
+
+If you want, I can also turn this into a **shorter Replit execution prompt** that is more compressed and optimized for code generation.

@@ -1,0 +1,440 @@
+Here’s a stronger rewritten **Replit prompt** that better explains the plan, the bugs to fix, and the new kindness system behavior in a clear product-development way:
+
+```text
+Edit and improve the existing “Phone Msgr 2026” React Native + Expo + Express + PostgreSQL codebase in this Replit project.
+
+IMPORTANT:
+This is not a rebuild from scratch.
+This is a repo-aware product improvement task for the CURRENT Phone Msgr codebase and architecture.
+
+You must work with the existing project structure, current backend, current screens, current routes, and current realtime system.
+
+CURRENT STACK / CONTEXT:
+- React Native with Expo SDK 54
+- Expo Router
+- TypeScript
+- Express backend
+- PostgreSQL with Drizzle ORM
+- WebSocket realtime messaging and presence
+- TanStack React Query
+- Multer uploads
+- expo-location for Live Field
+- existing tabs and screens for home, live-field, feed, messages, profile, chat, settings, monetization, pricing, offline
+
+PRIMARY GOAL:
+Improve Phone Msgr so its status, buddy logic, feed distribution, and kindness economy behave correctly and feel more coherent as a real social messaging app.
+
+The app should feel like:
+- a premium local social messenger
+- a buddy-based and nearby-based social feed
+- a live presence app
+- a kindness reputation network
+
+DO NOT:
+- rewrite the whole app
+- replace the current stack
+- remove existing design language
+- ignore existing routes, schema, or websocket presence logic
+- break working auth or messaging flows
+
+INSTEAD:
+- inspect the current repository and fix the existing logic
+- extend the current schema, API routes, storage methods, hooks, and screens carefully
+- keep the current premium futuristic UI style
+- update README and replit.md if behavior changes
+
+==================================================
+PART 1 — FIX ONLINE / OFFLINE STATUS ON HOME SCREEN
+==================================================
+
+CURRENT PROBLEM:
+The end user incorrectly reads as “offline” on the Home screen even while actively messaging other users in real time.
+
+EXPECTED BEHAVIOR:
+If a user is actively authenticated in the app and connected through the current realtime/session layer, their status should not incorrectly show “offline.”
+Presence should feel accurate and consistent throughout the app.
+
+REQUIREMENTS:
+- Fix presence detection so the current signed-in user’s status reflects active app usage
+- If the user is currently connected and sending/receiving messages, Home should show online or active, not offline
+- Reuse the existing WebSocket presence system if possible
+- Make status consistent across:
+  - Home screen
+  - Messages list
+  - user search results
+  - Live Field nearby users list
+- If the exact logic is not already available, create a clearer presence model with:
+  - isOnline
+  - lastSeenAt
+  - lastActiveAt
+  - connection state
+- Presence should update when:
+  - app opens
+  - user signs in
+  - websocket connects
+  - messages are sent
+  - app goes to background/foreground where practical
+
+BACKEND NOTES:
+- Improve websocket presence tracking if needed
+- Expose only minimal safe presence data
+- Avoid fake “offline” defaults when the user is clearly active
+
+==================================================
+PART 2 — ADD REMOVE BUDDY ACTION FROM NEARBY BUDDY LIST
+==================================================
+
+NEW FEATURE:
+When the user taps the “X buddies nearby” or similar bottom bar/list entry in Live Field while in Buddy mode, the resulting nearby buddy list should include a Remove button next to Message.
+
+EXPECTED UI:
+For each nearby buddy in the list:
+- avatar
+- display name
+- @username
+- online/offline status
+- distance
+- Message button
+- Remove button
+
+EXPECTED BEHAVIOR:
+- Tapping Remove should remove that person from the current user’s buddy list / buddy connection
+- The UI should update immediately or refetch cleanly
+- Removed users should no longer appear in Buddy feed logic or Buddy nearby logic unless re-added later
+- Preserve any safe confirmation UX if needed
+
+BACKEND NOTES:
+- Add or update buddy removal endpoint
+- Reuse buddy_connections table and existing route patterns
+- Ensure only authorized users can remove their own buddy connections
+
+==================================================
+PART 3 — FIX BUDDY FEED POST DISTRIBUTION
+==================================================
+
+CURRENT BUG:
+I tested with two phones:
+- one logged in as @nawwg
+- one logged in as @demouser
+
+I made a post as @nawwg.
+I could see the post in Nearby feed, but not in Buddy feed after adding @nawwg to the buddy list.
+
+THIS MUST BE FIXED.
+
+EXPECTED FEED LOGIC:
+Buddy Feed should show:
+- my own posts
+- posts from users who are in my accepted buddy list / accepted connection state
+
+Nearby Feed should show:
+- posts from users near me according to nearby logic
+- optionally my own posts if the current design supports continuity
+
+SPECIFIC FIX REQUIRED:
+- If user A and user B are buddies, then user A’s posts should appear in user B’s Buddy feed
+- And user B’s posts should appear in user A’s Buddy feed
+- Also, a user should be able to see their own posts in their own Buddy feed for continuity
+- Do not rely on Nearby feed visibility as a replacement for Buddy feed visibility
+
+BACKEND NOTES:
+- Review current feed query logic
+- Ensure accepted buddy relationships are actually used in Buddy feed retrieval
+- Confirm directionality of buddy_connections is handled correctly
+- Fix any join/filter logic that excludes valid buddy posts
+- Add tests or seed validation if helpful
+
+==================================================
+PART 4 — EXPAND THE KINDNESS ECONOMY FOR LIKES, COMMENTS, AND POSTS
+==================================================
+
+Phone Msgr’s feed should now support a more complete kindness points system.
+
+A. LIKING OTHER USERS’ POSTS SHOULD EARN KINDNESS
+NEW RULE:
+When I like posts made by other users, not my own posts, I should be able to receive kindness points.
+
+IMPORTANT:
+- Liking my own post should not award me kindness
+- Only liking someone else’s post can award kindness to the liking user if that is the product rule
+- If needed, also support awarding kindness to the post author depending on interaction model, but the main requirement is:
+  the person engaging positively with others should be able to receive kindness points
+
+Plan and implement the best model clearly and consistently.
+
+B. COMMENTS SHOULD SUPPORT KINDNESS AWARDS / PENALTIES
+NEW RULE:
+When I leave a comment on another user’s post, the post owner should have the option to:
+- award +10 kindness points to that comment
+- subtract -10 kindness points from that comment
+
+EXPECTED BEHAVIOR:
+- The post owner moderates/responds to comments on their post by awarding or subtracting kindness
+- This affects the commenting user’s kindness total
+- Only authorized users should be allowed to do this, ideally the post owner
+- The action should be stored in the database, not just client-side
+
+C. POSTS THEMSELVES SHOULD SUPPORT KINDNESS AWARDS / PENALTIES
+NEW RULE:
+On feed posts, other users should also be able to:
+- award +10 kindness points to a post
+- subtract -10 kindness points from a post
+
+EXPECTED BEHAVIOR:
+- These kindness adjustments should be tracked and calculated
+- The post’s visible kindness total should reflect all awards and subtractions
+- The post author’s overall kindness score should also be influenced according to the product rules
+- Users should not be allowed to repeatedly spam infinite point changes without protection logic
+- Add TODO notes for anti-abuse/rate limits if not fully implemented now
+
+==================================================
+PART 5 — DEFINE A CLEAR KINDNESS DATA MODEL
+==================================================
+
+Implement or improve the kindness system so it is not vague.
+
+The app now needs clear support for kindness on:
+- post likes
+- comments
+- posts themselves
+
+RECOMMENDED MODEL:
+Use a ledger-style approach so every kindness action is recorded and calculable.
+
+Support actions such as:
+- LIKE_OTHER_POST_REWARD
+- COMMENT_AWARDED_POSITIVE
+- COMMENT_AWARDED_NEGATIVE
+- POST_AWARDED_POSITIVE
+- POST_AWARDED_NEGATIVE
+
+Each action should ideally store:
+- actorUserId
+- targetUserId
+- targetType (post, comment, like, user, etc.)
+- targetId
+- pointsDelta
+- reason / actionType
+- createdAt
+
+EXPECTED CALCULATIONS:
+- A user’s total kindness score should be derived from stored actions or reliably updated from them
+- A post should show its aggregate kindness total from awards/subtractions
+- A comment should show its aggregate kindness total from awards/subtractions if displayed in UI
+- Feed cards should display the kindness totals clearly
+
+IMPORTANT:
+Keep current logic coherent and avoid double counting.
+
+==================================================
+PART 6 — FEED UI / UX CHANGES
+==================================================
+
+Update the Feed UI so the new kindness interactions are visible and usable.
+
+POSTS SHOULD SUPPORT:
+- like button
+- comment button
+- kindness total display
+- award +10 button
+- subtract -10 button
+
+COMMENTS SHOULD SUPPORT:
+- visible comment row
+- if current viewer is the post owner:
+  - award +10 to comment
+  - subtract -10 from comment
+
+RULES:
+- Keep the premium futuristic dark mode style
+- Do not clutter the cards
+- Make kindness interactions readable and intentional
+- Use glassmorphism / neon accents consistent with Phone Msgr
+- Add small labels/tooltips or icons where useful so the meaning is clear
+
+==================================================
+PART 7 — API / BACKEND CHANGES
+==================================================
+
+Add or update backend routes and logic as needed for:
+
+1. Presence accuracy
+- fix active/online state for signed-in users
+
+2. Buddy removal
+- remove a buddy connection safely
+
+3. Buddy feed retrieval
+- correctly include accepted buddies’ posts and own posts
+
+4. Kindness actions
+Possible route patterns:
+- POST /api/feed/:id/like
+- POST /api/feed/:id/kindness
+- POST /api/feed/comments/:id/kindness
+or equivalent patterns matching the existing route style
+
+All routes must:
+- require auth
+- validate input
+- enforce authorization
+- prevent duplicate or invalid actions where practical
+- persist changes in PostgreSQL
+
+==================================================
+PART 8 — SCHEMA / STORAGE CHANGES
+==================================================
+
+Review and update the Drizzle schema and storage layer carefully.
+
+Likely areas to extend:
+- users
+- buddy_connections
+- feed_posts
+- feed_comments
+- kindness_ledger
+- nearby_presence
+- any presence-related fields/tables if needed
+
+POSSIBLE IMPROVEMENTS:
+- add presence timestamps
+- add accepted/removed buddy states if needed
+- add post kindness aggregate fields if useful for performance
+- add comment kindness aggregate fields if useful
+- add action uniqueness rules where practical
+- add indexes to support feed and presence queries efficiently
+
+Do not overengineer, but make the data model clear and durable.
+
+==================================================
+PART 9 — FILES TO REVIEW AND UPDATE
+==================================================
+
+Work within the existing repo and update the most relevant files, likely including:
+
+shared/
+- schema.ts
+
+server/
+- routes.ts
+- storage.ts
+- websocket.ts
+- auth.ts
+- seed.ts
+- db.ts if needed
+
+app/
+- (tabs)/index.tsx
+- (tabs)/feed.tsx
+- (tabs)/live-field.tsx
+- (tabs)/messages.tsx
+- chat/[id].tsx
+- profile.tsx if kindness totals display there
+- any nearby list route/screen already added or needed
+
+components/
+- Avatar.tsx
+- GlassCard.tsx
+- StatusChip.tsx
+- plus any new feed action components needed
+
+lib/
+- websocket.ts
+- query-client.ts
+- auth-context.tsx
+- any hooks used for feed/presence/buddies
+
+==================================================
+PART 10 — README / DOCUMENTATION UPDATE
+==================================================
+
+After implementing the changes, update README.md and replit.md to explain:
+
+- how presence now works
+- how buddy removal works
+- how Buddy feed vs Nearby feed works
+- the fix for buddy post visibility
+- how kindness points are earned from likes
+- how post owners can award/subtract kindness on comments
+- how users can award/subtract kindness on posts
+- any limitations or TODOs for abuse prevention and moderation
+
+==================================================
+BUSINESS / PRODUCT RULES TO FOLLOW
+==================================================
+
+These rules should now be true in the app:
+
+1. ACTIVE USERS SHOULD NOT APPEAR OFFLINE
+If I am actively using Phone Msgr and messaging people, the app should not show me as offline on Home.
+
+2. BUDDY FEED SHOULD ACTUALLY FEEL LIKE A BUDDY FEED
+If someone is in my buddy list, their posts should appear in my Buddy feed.
+My own posts should also appear there.
+
+3. LIVE FIELD BUDDY LIST SHOULD BE ACTIONABLE
+From the nearby buddy list, I should be able to message or remove a buddy.
+
+4. KINDNESS SHOULD REWARD SOCIAL ENGAGEMENT
+When I positively engage with others’ posts, I can earn kindness.
+When others interact with my post or comments, kindness can go up or down based on actual actions.
+
+5. KINDNESS TOTALS SHOULD BE CALCULATED, NOT FAKE
+Post and comment kindness totals must reflect stored awards and subtractions.
+
+==================================================
+PERFORMANCE / SAFETY REQUIREMENTS
+==================================================
+
+- Do not expose unsafe private data
+- Protect all new actions with auth
+- Prevent obvious duplicate kindness abuse where practical
+- Keep feed queries efficient
+- Keep realtime presence lightweight
+- Maintain current security patterns
+- Add TODO comments for:
+  - anti-abuse/rate limiting
+  - moderation review
+  - more advanced presence handling
+  - push notifications
+  - analytics around kindness actions
+
+==================================================
+EXPECTED OUTPUT
+==================================================
+
+Generate a repo-aware implementation plan and code updates for the current Phone Msgr project that include:
+
+1. presence bug fix plan
+2. buddy removal feature
+3. buddy feed distribution fix
+4. kindness system expansion for likes/comments/posts
+5. schema changes
+6. storage/database updates
+7. route changes
+8. frontend screen/component changes
+9. README/replit.md updates
+10. clear notes on what is implemented vs TODO
+
+SUCCESS CRITERIA:
+After these changes:
+- the signed-in active user does not incorrectly show offline on Home
+- I can remove buddies from the nearby buddy list
+- buddy posts appear correctly in Buddy feed
+- liking other users’ posts can contribute to kindness logic
+- post owners can award/subtract kindness on comments
+- users can award/subtract kindness on posts
+- post/comment kindness totals are visibly calculated and displayed
+- the app still matches the premium Phone Msgr design and current repo conventions
+
+Now inspect the existing repository and extend the current codebase accordingly, using the current architecture and style of this project.
+```
+
+This version is better because it tells Replit exactly:
+
+* what’s broken
+* what behavior you expect instead
+* what business rules should now define the app
+* where to update the repo without rebuilding it
+
+I can also compress this into a **shorter, more codegen-friendly Replit prompt** if you want a version that’s tighter and more likely to execute cleanly in one shot.

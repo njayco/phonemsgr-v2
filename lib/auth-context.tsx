@@ -1,81 +1,95 @@
-import { createContext, useContext, useState, useEffect, useMemo, ReactNode } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { CURRENT_USER, type UserProfile } from './mock-data';
+import { createContext, useContext, useState, useEffect, useMemo, useCallback, ReactNode } from 'react';
+import { apiRequest, getQueryFn, queryClient } from '@/lib/query-client';
+import { useQuery } from '@tanstack/react-query';
+
+export interface UserProfile {
+  id: string;
+  username: string;
+  displayName: string;
+  avatarUrl: string;
+  kindnessScore: number;
+  reputationLevel: number;
+  plan: 'temp' | 'associate' | 'executive';
+  isOnline: boolean;
+  badges: string[];
+  connections: number;
+  messagesCount: number;
+  eventsCount: number;
+  interests: string[];
+  monthlyRevenue: number;
+  inboxPrice: number;
+  phone?: string;
+}
 
 interface AuthContextValue {
   user: UserProfile | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  signIn: (username: string) => Promise<void>;
-  signUp: (username: string, displayName: string, phone: string) => Promise<void>;
+  signIn: (username: string, password: string) => Promise<void>;
+  signUp: (username: string, displayName: string, phone: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   updateUser: (updates: Partial<UserProfile>) => void;
+  refetchUser: () => void;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<UserProfile | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const {
+    data: user,
+    isLoading,
+    refetch,
+  } = useQuery<UserProfile | null>({
+    queryKey: ['/api/auth/me'],
+    queryFn: getQueryFn({ on401: 'returnNull' }),
+    staleTime: Infinity,
+    retry: false,
+  });
 
-  useEffect(() => {
-    AsyncStorage.getItem('phone_msgr_user').then((stored) => {
-      if (stored) {
-        try {
-          setUser(JSON.parse(stored));
-        } catch {
-          setUser(null);
-        }
-      }
-      setIsLoading(false);
+  const signIn = useCallback(async (username: string, password: string) => {
+    const res = await apiRequest('POST', '/api/auth/login', { username, password });
+    const data = await res.json();
+    queryClient.setQueryData(['/api/auth/me'], data);
+  }, []);
+
+  const signUp = useCallback(async (username: string, displayName: string, phone: string, password: string) => {
+    const res = await apiRequest('POST', '/api/auth/register', {
+      username,
+      password,
+      displayName,
+      phone,
+    });
+    const data = await res.json();
+    queryClient.setQueryData(['/api/auth/me'], data);
+  }, []);
+
+  const signOut = useCallback(async () => {
+    await apiRequest('POST', '/api/auth/logout');
+    queryClient.setQueryData(['/api/auth/me'], null);
+    queryClient.clear();
+  }, []);
+
+  const updateUser = useCallback((updates: Partial<UserProfile>) => {
+    queryClient.setQueryData(['/api/auth/me'], (old: UserProfile | null) => {
+      if (!old) return old;
+      return { ...old, ...updates };
     });
   }, []);
 
-  const signIn = async (username: string) => {
-    const u = { ...CURRENT_USER, username };
-    setUser(u);
-    await AsyncStorage.setItem('phone_msgr_user', JSON.stringify(u));
-  };
-
-  const signUp = async (username: string, displayName: string, _phone: string) => {
-    const u: UserProfile = {
-      ...CURRENT_USER,
-      username,
-      displayName,
-      kindnessScore: 0,
-      reputationLevel: 1,
-      plan: 'temp',
-      connections: 0,
-      messagesCount: 0,
-      eventsCount: 0,
-      monthlyRevenue: 0,
-    };
-    setUser(u);
-    await AsyncStorage.setItem('phone_msgr_user', JSON.stringify(u));
-  };
-
-  const signOut = async () => {
-    setUser(null);
-    await AsyncStorage.removeItem('phone_msgr_user');
-  };
-
-  const updateUser = (updates: Partial<UserProfile>) => {
-    if (user) {
-      const updated = { ...user, ...updates };
-      setUser(updated);
-      AsyncStorage.setItem('phone_msgr_user', JSON.stringify(updated));
-    }
-  };
+  const refetchUser = useCallback(() => {
+    refetch();
+  }, [refetch]);
 
   const value = useMemo(() => ({
-    user,
+    user: user ?? null,
     isAuthenticated: !!user,
     isLoading,
     signIn,
     signUp,
     signOut,
     updateUser,
-  }), [user, isLoading]);
+    refetchUser,
+  }), [user, isLoading, signIn, signUp, signOut, updateUser, refetchUser]);
 
   return (
     <AuthContext.Provider value={value}>

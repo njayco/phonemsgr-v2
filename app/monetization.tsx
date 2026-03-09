@@ -4,15 +4,17 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useQuery, useMutation } from '@tanstack/react-query';
 import { GlassCard } from '@/components/GlassCard';
 import { useAuth } from '@/lib/auth-context';
-import { REVENUE_DATA } from '@/lib/mock-data';
+import { apiRequest, queryClient } from '@/lib/query-client';
 import Colors from '@/constants/colors';
+
+const REVENUE_DATA = [420, 680, 890, 1200, 1580, 1890, 2340];
 
 function MiniChart({ data }: { data: number[] }) {
   const max = Math.max(...data);
-  const barCount = data.length;
   return (
     <View style={chartStyles.container}>
       {data.map((val, i) => (
@@ -36,10 +38,33 @@ const chartStyles = StyleSheet.create({
 export default function MonetizationScreen() {
   const insets = useSafeAreaInsets();
   const { user, updateUser } = useAuth();
-  const [inboxPriceEnabled, setInboxPriceEnabled] = useState(true);
-  const [priceValue, setPriceValue] = useState(user?.inboxPrice?.toString() || '5.00');
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
   const bottomInset = Platform.OS === 'web' ? 34 : insets.bottom;
+
+  const { data: monetization } = useQuery<any>({
+    queryKey: ['/api/monetization'],
+  });
+
+  const [inboxPriceEnabled, setInboxPriceEnabled] = useState(monetization?.inboxPriceEnabled ?? true);
+  const [priceValue, setPriceValue] = useState(user?.inboxPrice?.toString() || '5.00');
+
+  useEffect(() => {
+    if (monetization) {
+      setInboxPriceEnabled(monetization.inboxPriceEnabled);
+      if (monetization.inboxPrice > 0) {
+        setPriceValue(monetization.inboxPrice.toString());
+      }
+    }
+  }, [monetization]);
+
+  const updateMonetization = useMutation({
+    mutationFn: async (updates: any) => {
+      await apiRequest('PATCH', '/api/monetization', updates);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/monetization'] });
+    },
+  });
 
   return (
     <View style={styles.container}>
@@ -66,7 +91,9 @@ export default function MonetizationScreen() {
                 style={[styles.toggleSwitch, inboxPriceEnabled && styles.toggleSwitchOn]}
                 onPress={() => {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  setInboxPriceEnabled(!inboxPriceEnabled);
+                  const next = !inboxPriceEnabled;
+                  setInboxPriceEnabled(next);
+                  updateMonetization.mutate({ inboxPriceEnabled: next });
                 }}
               >
                 <View style={[styles.toggleKnob, inboxPriceEnabled && styles.toggleKnobOn]} />
@@ -79,6 +106,10 @@ export default function MonetizationScreen() {
                 style={styles.priceInput}
                 value={priceValue}
                 onChangeText={setPriceValue}
+                onBlur={() => {
+                  const price = parseFloat(priceValue) || 0;
+                  updateMonetization.mutate({ inboxPrice: price });
+                }}
                 keyboardType="decimal-pad"
                 editable={inboxPriceEnabled}
               />
@@ -134,11 +165,11 @@ const styles = StyleSheet.create({
   toggleSwitch: { width: 44, height: 24, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.12)', justifyContent: 'center', paddingHorizontal: 2 },
   toggleSwitchOn: { backgroundColor: Colors.dark.accentGreen },
   toggleKnob: { width: 20, height: 20, borderRadius: 10, backgroundColor: '#FFFFFF' },
-  toggleKnobOn: { alignSelf: 'flex-end' },
+  toggleKnobOn: { alignSelf: 'flex-end' as const },
   cardDesc: { fontSize: 11, fontFamily: 'Inter_400Regular', color: Colors.dark.textMuted },
   priceInputRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.dark.inputBackground, borderRadius: 8, paddingHorizontal: 8, borderWidth: 1, borderColor: Colors.dark.glassBorder },
   priceSign: { fontSize: 16, fontFamily: 'Inter_600SemiBold', color: Colors.dark.text },
-  priceInput: { flex: 1, height: 36, fontSize: 16, fontFamily: 'Inter_600SemiBold', color: Colors.dark.text, textAlign: 'right' },
+  priceInput: { flex: 1, height: 36, fontSize: 16, fontFamily: 'Inter_600SemiBold', color: Colors.dark.text, textAlign: 'right' as const },
   eventButton: { alignItems: 'center', gap: 6, backgroundColor: 'rgba(0,229,255,0.08)', borderRadius: 12, padding: 12 },
   eventButtonText: { fontSize: 11, fontFamily: 'Inter_600SemiBold', color: Colors.dark.accentCyan },
   sliderRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },

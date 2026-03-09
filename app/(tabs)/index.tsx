@@ -1,22 +1,44 @@
-import { View, Text, ScrollView, StyleSheet, Pressable, Platform } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, Pressable, Platform, ActivityIndicator } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useQuery } from '@tanstack/react-query';
 import { GlassCard } from '@/components/GlassCard';
 import { useAuth } from '@/lib/auth-context';
-import { NEARBY_USERS, RECENT_ACTIVITY } from '@/lib/mock-data';
 import Colors from '@/constants/colors';
+
+function timeAgo(ts: number | string): string {
+  const time = typeof ts === 'string' ? new Date(ts).getTime() : ts;
+  const diff = Date.now() - time;
+  if (diff < 3600000) return `${Math.max(1, Math.floor(diff / 60000))}m ago`;
+  if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+  if (diff < 604800000) return `${Math.floor(diff / 86400000)}d ago`;
+  return `${Math.floor(diff / 604800000)}w ago`;
+}
 
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
 
+  const { data: activity } = useQuery<any[]>({
+    queryKey: ['/api/kindness/history'],
+    enabled: !!user,
+  });
+
+  const { data: nearby } = useQuery<any[]>({
+    queryKey: ['/api/nearby'],
+    enabled: !!user,
+  });
+
   if (!user) return null;
 
   const planLabel = user.plan === 'executive' ? 'Executive' : user.plan === 'associate' ? 'Associate' : 'Temp';
   const planColor = user.plan === 'executive' ? Colors.dark.accentGreen : user.plan === 'associate' ? Colors.dark.accentBlue : Colors.dark.textSecondary;
+
+  const recentActivity = activity?.slice(0, 4) || [];
+  const nearbyCount = nearby?.length || 0;
 
   return (
     <View style={styles.container}>
@@ -64,7 +86,7 @@ export default function HomeScreen() {
               <Ionicons name="locate" size={20} color={Colors.dark.accentGreen} />
             </View>
             <Text style={styles.quickLabel}>Nearby</Text>
-            <Text style={styles.quickCount}>{NEARBY_USERS.length}</Text>
+            <Text style={styles.quickCount}>{nearbyCount}</Text>
           </Pressable>
           <Pressable style={styles.quickAction} onPress={() => router.push('/monetization')}>
             <View style={[styles.quickIcon, { backgroundColor: 'rgba(0,229,255,0.1)' }]}>
@@ -100,13 +122,16 @@ export default function HomeScreen() {
 
         <GlassCard>
           <Text style={styles.sectionTitle}>Recent Activity</Text>
-          {RECENT_ACTIVITY.slice(0, 4).map((item) => (
+          {recentActivity.length === 0 && (
+            <Text style={styles.emptyText}>No recent activity yet</Text>
+          )}
+          {recentActivity.map((item: any) => (
             <View key={item.id} style={styles.activityRow}>
               <View style={styles.activityBadge}>
                 <Text style={styles.activityPoints}>+{item.points}</Text>
               </View>
               <Text style={styles.activityDesc} numberOfLines={1}>{item.description}</Text>
-              <Text style={styles.activityTime}>{item.timeAgo}</Text>
+              <Text style={styles.activityTime}>{timeAgo(item.createdAt)}</Text>
             </View>
           ))}
         </GlassCard>
@@ -163,6 +188,7 @@ const styles = StyleSheet.create({
   activityPoints: { fontSize: 13, fontFamily: 'Inter_600SemiBold', color: Colors.dark.accentGreen },
   activityDesc: { flex: 1, fontSize: 13, fontFamily: 'Inter_400Regular', color: Colors.dark.text },
   activityTime: { fontSize: 11, fontFamily: 'Inter_400Regular', color: Colors.dark.textMuted },
+  emptyText: { fontSize: 13, fontFamily: 'Inter_400Regular', color: Colors.dark.textMuted, textAlign: 'center', paddingVertical: 12 },
   revenueRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   revenueLabel: { fontSize: 13, fontFamily: 'Inter_400Regular', color: Colors.dark.textSecondary },
   revenueValue: { fontSize: 24, fontFamily: 'Inter_700Bold', color: Colors.dark.accentCyan, marginTop: 2 },

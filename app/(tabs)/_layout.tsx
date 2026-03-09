@@ -8,6 +8,7 @@ import { Ionicons } from "@expo/vector-icons";
 import React from "react";
 import Colors from "@/constants/colors";
 import { useAuth } from "@/lib/auth-context";
+import { connectWebSocket, disconnectWebSocket } from "@/lib/websocket";
 
 function NativeTabLayout() {
   return (
@@ -102,13 +103,22 @@ function ClassicTabLayout() {
 }
 
 export default function TabLayout() {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, user } = useAuth();
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
       router.replace('/');
     }
   }, [isLoading, isAuthenticated]);
+
+  useEffect(() => {
+    if (isAuthenticated && user?.id) {
+      connectWebSocket(user.id);
+      return () => {
+        disconnectWebSocket();
+      };
+    }
+  }, [isAuthenticated, user?.id]);
 
   if (!isAuthenticated) return null;
 

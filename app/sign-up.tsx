@@ -13,7 +13,9 @@ export default function SignUpScreen() {
   const [phone, setPhone] = useState('');
   const [username, setUsername] = useState('');
   const [displayName, setDisplayName] = useState('');
+  const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
 
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
   const bottomInset = Platform.OS === 'web' ? 34 : insets.bottom;
@@ -27,11 +29,24 @@ export default function SignUpScreen() {
       Alert.alert('Required', 'Please enter your name');
       return;
     }
+    if (!password.trim() || password.length < 4) {
+      Alert.alert('Required', 'Password must be at least 4 characters');
+      return;
+    }
     setIsLoading(true);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    await signUp(username.trim(), displayName.trim(), phone.trim());
-    setIsLoading(false);
-    router.replace('/(tabs)');
+    setError('');
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      await signUp(username.trim(), displayName.trim(), phone.trim(), password);
+      router.replace('/(tabs)');
+    } catch (err: any) {
+      const msg = err.message?.includes('409')
+        ? 'Username already taken'
+        : 'Sign up failed. Please try again.';
+      setError(msg);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -45,6 +60,12 @@ export default function SignUpScreen() {
       <ScrollView style={styles.scrollView} contentContainerStyle={{ paddingBottom: bottomInset + 20 }} keyboardShouldPersistTaps="handled">
         <Text style={styles.title}>Create Account</Text>
         <Text style={styles.subtitle}>Join the kindness-based network</Text>
+
+        {!!error && (
+          <View style={styles.errorBox}>
+            <Text style={styles.errorText}>{error}</Text>
+          </View>
+        )}
 
         <View style={styles.form}>
           <View style={styles.inputWrapper}>
@@ -88,6 +109,20 @@ export default function SignUpScreen() {
                 onChangeText={setDisplayName}
                 placeholder="Your name"
                 placeholderTextColor={Colors.dark.textMuted}
+              />
+            </View>
+          </View>
+
+          <View style={styles.inputWrapper}>
+            <Text style={styles.inputLabel}>Password</Text>
+            <View style={styles.inputContainer}>
+              <TextInput
+                style={styles.input}
+                value={password}
+                onChangeText={setPassword}
+                placeholder="Min 4 characters"
+                placeholderTextColor={Colors.dark.textMuted}
+                secureTextEntry
               />
             </View>
           </View>
@@ -136,6 +171,18 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_400Regular',
     color: Colors.dark.textSecondary,
     marginBottom: 40,
+  },
+  errorBox: {
+    backgroundColor: 'rgba(255, 59, 48, 0.15)',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 16,
+  },
+  errorText: {
+    color: '#FF3B30',
+    fontSize: 14,
+    fontFamily: 'Inter_500Medium',
+    textAlign: 'center',
   },
   form: {
     gap: 20,

@@ -1,12 +1,24 @@
-import { View, Text, FlatList, StyleSheet, Pressable, Platform, TextInput } from 'react-native';
+import { View, Text, FlatList, StyleSheet, Pressable, Platform, TextInput, ActivityIndicator } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Avatar } from '@/components/Avatar';
-import { CHAT_THREADS, type ChatThread } from '@/lib/mock-data';
 import Colors from '@/constants/colors';
+
+interface ChatThread {
+  id: string;
+  participantId: string;
+  participantName: string;
+  participantAvatar: string;
+  lastMessage: string;
+  lastMessageTime: number;
+  unreadCount: number;
+  isOnline: boolean;
+  isEncrypted: boolean;
+}
 
 function timeLabel(ts: number): string {
   const diff = Date.now() - ts;
@@ -24,6 +36,7 @@ function ChatRow({ thread }: { thread: ChatThread }) {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         router.push({ pathname: '/chat/[id]', params: { id: thread.id, name: thread.participantName } });
       }}
+      testID={`chat-thread-${thread.id}`}
     >
       <View style={styles.avatarContainer}>
         <Avatar name={thread.participantName} size={48} showGlow={thread.isOnline} glowColor={Colors.dark.onlineGreen} />
@@ -64,9 +77,14 @@ export default function MessagesScreen() {
   const [search, setSearch] = useState('');
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
 
+  const { data: threads, isLoading } = useQuery<ChatThread[]>({
+    queryKey: ['/api/threads'],
+  });
+
+  const allThreads = threads || [];
   const filtered = search
-    ? CHAT_THREADS.filter(t => t.participantName.toLowerCase().includes(search.toLowerCase()))
-    : CHAT_THREADS;
+    ? allThreads.filter(t => t.participantName.toLowerCase().includes(search.toLowerCase()))
+    : allThreads;
 
   return (
     <View style={styles.container}>
@@ -88,20 +106,26 @@ export default function MessagesScreen() {
         />
       </View>
 
-      <FlatList
-        data={filtered}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => <ChatRow thread={item} />}
-        contentContainerStyle={styles.listContent}
-        showsVerticalScrollIndicator={false}
-        scrollEnabled={filtered.length > 0}
-        ListEmptyComponent={
-          <View style={styles.emptyState}>
-            <Ionicons name="chatbubbles-outline" size={48} color={Colors.dark.textMuted} />
-            <Text style={styles.emptyText}>No messages yet</Text>
-          </View>
-        }
-      />
+      {isLoading ? (
+        <View style={styles.loadingState}>
+          <ActivityIndicator color={Colors.dark.accentBlue} />
+        </View>
+      ) : (
+        <FlatList
+          data={filtered}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => <ChatRow thread={item} />}
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
+          scrollEnabled={filtered.length > 0}
+          ListEmptyComponent={
+            <View style={styles.emptyState}>
+              <Ionicons name="chatbubbles-outline" size={48} color={Colors.dark.textMuted} />
+              <Text style={styles.emptyText}>No messages yet</Text>
+            </View>
+          }
+        />
+      )}
     </View>
   );
 }
@@ -114,6 +138,7 @@ const styles = StyleSheet.create({
   searchContainer: { flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 16, backgroundColor: Colors.dark.inputBackground, borderRadius: 12, paddingHorizontal: 12, marginBottom: 8 },
   searchInput: { flex: 1, height: 40, fontSize: 15, fontFamily: 'Inter_400Regular', color: Colors.dark.text },
   listContent: { paddingBottom: 100 },
+  loadingState: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 80 },
   chatRow: { flexDirection: 'row', paddingHorizontal: 16, paddingVertical: 12, gap: 12 },
   avatarContainer: { justifyContent: 'center' },
   chatInfo: { flex: 1, gap: 4 },

@@ -1,14 +1,24 @@
 import { useState, useRef, useCallback } from 'react';
-import { View, Text, FlatList, TextInput, StyleSheet, Pressable, Platform, KeyboardAvoidingView } from 'react-native';
+import { View, Text, FlatList, TextInput, StyleSheet, Pressable, Platform, KeyboardAvoidingView, ActivityIndicator } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import { useQuery, useMutation } from '@tanstack/react-query';
 import { Avatar } from '@/components/Avatar';
-import { MOCK_MESSAGES, type Message } from '@/lib/mock-data';
+import { apiRequest, queryClient } from '@/lib/query-client';
+import { useAuth } from '@/lib/auth-context';
 import Colors from '@/constants/colors';
 
-function formatTime(ts: number): string {
+interface Message {
+  id: string;
+  text: string;
+  senderId: string;
+  createdAt: string;
+  isDeliveredViaMesh: boolean;
+}
+
+function formatTime(ts: string): string {
   const d = new Date(ts);
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
@@ -19,7 +29,7 @@ function MessageBubble({ message, isOwn }: { message: Message; isOwn: boolean })
       <View style={[styles.bubble, isOwn ? styles.bubbleOwn : styles.bubbleOther]}>
         <Text style={styles.bubbleText}>{message.text}</Text>
         <View style={styles.bubbleMeta}>
-          <Text style={styles.bubbleTime}>{formatTime(message.timestamp)}</Text>
+          <Text style={styles.bubbleTime}>{formatTime(message.createdAt)}</Text>
           {message.isDeliveredViaMesh && (
             <View style={styles.meshBadge}>
               <Ionicons name="git-network" size={9} color={Colors.dark.accentGreen} />
@@ -34,28 +44,40 @@ function MessageBubble({ message, isOwn }: { message: Message; isOwn: boolean })
 
 export default function ChatScreen() {
   const insets = useSafeAreaInsets();
+  const { user } = useAuth();
   const { id, name } = useLocalSearchParams<{ id: string; name: string }>();
   const [inputText, setInputText] = useState('');
-  const [messages, setMessages] = useState<Message[]>(MOCK_MESSAGES[id as string] || MOCK_MESSAGES['chat-1']);
   const flatListRef = useRef<FlatList>(null);
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
   const bottomInset = Platform.OS === 'web' ? 34 : insets.bottom;
 
+  const { data: messages, isLoading } = useQuery<Message[]>({
+    queryKey: ['/api/threads', id, 'messages'],
+    refetchInterval: 5000,
+    enabled: !!id,
+  });
+
+  const sendMutation = useMutation({
+    mutationFn: async (text: string) => {
+      const res = await apiRequest('POST', `/api/threads/${id}/messages`, { text });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/threads', id, 'messages'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/threads'] });
+    },
+  });
+
   const sendMessage = useCallback(() => {
     if (!inputText.trim()) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    const newMsg: Message = {
-      id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
-      text: inputText.trim(),
-      senderId: 'user-1',
-      timestamp: Date.now(),
-      isDeliveredViaMesh: false,
-    };
-    setMessages(prev => [...prev, newMsg]);
+    const text = inputText.trim();
     setInputText('');
-  }, [inputText]);
+    sendMutation.mutate(text);
+  }, [inputText, sendMutation]);
 
-  const reversedMessages = [...messages].reverse();
+  const allMessages = messages || [];
+  const reversedMessages = [...allMessages].reverse();
 
   return (
     <KeyboardAvoidingView
@@ -87,17 +109,23 @@ export default function ChatScreen() {
 
       <View style={styles.headerBorder} />
 
-      <FlatList
-        ref={flatListRef}
-        data={reversedMessages}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <MessageBubble message={item} isOwn={item.senderId === 'user-1'} />
-        )}
-        inverted
-        contentContainerStyle={styles.messageList}
-        showsVerticalScrollIndicator={false}
-      />
+      {isLoading ? (
+        <View style={styles.loadingState}>
+          <ActivityIndicator color={Colors.dark.accentBlue} />
+        </View>
+      ) : (
+        <FlatList
+          ref={flatListRef}
+          data={reversedMessages}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => (
+            <MessageBubble message={item} isOwn={item.senderId === user?.id} />
+          )}
+          inverted
+          contentContainerStyle={styles.messageList}
+          showsVerticalScrollIndicator={false}
+        />
+      )}
 
       <View style={[styles.inputContainer, { paddingBottom: bottomInset + 8 }]}>
         <Pressable style={styles.attachBtn}>
@@ -112,12 +140,14 @@ export default function ChatScreen() {
             placeholderTextColor={Colors.dark.textMuted}
             multiline
             maxLength={1000}
+            testID="chat-input"
           />
         </View>
         <Pressable
           style={[styles.beamButton, !inputText.trim() && { opacity: 0.4 }]}
           onPress={sendMessage}
-          disabled={!inputText.trim()}
+          disabled={!inputText.trim() || sendMutation.isPending}
+          testID="beam-send-button"
         >
           <Text style={styles.beamText}>BEAM</Text>
         </Pressable>
@@ -140,6 +170,7 @@ const styles = StyleSheet.create({
   e2eText: { fontSize: 9, fontFamily: 'Inter_600SemiBold', color: Colors.dark.accentBlue },
   moreBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
   headerBorder: { height: 1, backgroundColor: Colors.dark.accentGreen, shadowColor: Colors.dark.accentGreen, shadowOpacity: 0.5, shadowRadius: 4, shadowOffset: { width: 0, height: 0 } },
+  loadingState: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   messageList: { paddingHorizontal: 12, paddingVertical: 8, gap: 6 },
   bubbleRow: { marginBottom: 2 },
   bubbleRowOwn: { alignItems: 'flex-end' },

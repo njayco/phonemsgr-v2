@@ -1,12 +1,27 @@
 import { useState } from 'react';
-import { View, Text, FlatList, StyleSheet, Pressable, Platform } from 'react-native';
+import { View, Text, FlatList, StyleSheet, Pressable, Platform, ActivityIndicator } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import { useQuery, useMutation } from '@tanstack/react-query';
 import { Avatar } from '@/components/Avatar';
 import { GlassCard } from '@/components/GlassCard';
-import { FEED_POSTS, type FeedPost } from '@/lib/mock-data';
+import { apiRequest, queryClient } from '@/lib/query-client';
 import Colors from '@/constants/colors';
+
+interface FeedPost {
+  id: string;
+  userId: string;
+  username: string;
+  avatar: string;
+  content: string;
+  mediaType: 'text' | 'image' | 'video' | 'audio' | 'document';
+  mediaUrl?: string;
+  timestamp: number;
+  kindnessEarned: number;
+  likes: number;
+  comments: number;
+}
 
 function timeAgo(ts: number): string {
   const diff = Date.now() - ts;
@@ -34,6 +49,23 @@ function MediaPreview({ type }: { type: string }) {
 function FeedPostItem({ post }: { post: FeedPost }) {
   const [liked, setLiked] = useState(false);
 
+  const likeMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest('POST', `/api/feed/${post.id}/like`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/feed'] });
+    },
+  });
+
+  const handleLike = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (!liked) {
+      setLiked(true);
+      likeMutation.mutate();
+    }
+  };
+
   return (
     <GlassCard style={styles.postCard}>
       <View style={styles.postHeader}>
@@ -56,10 +88,7 @@ function FeedPostItem({ post }: { post: FeedPost }) {
       </View>
 
       <View style={styles.actionRow}>
-        <Pressable
-          style={styles.actionButton}
-          onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setLiked(!liked); }}
-        >
+        <Pressable style={styles.actionButton} onPress={handleLike}>
           <Ionicons name={liked ? 'heart' : 'heart-outline'} size={20} color={liked ? Colors.dark.kindnessGreen : Colors.dark.textMuted} />
           <Text style={[styles.actionText, liked && { color: Colors.dark.kindnessGreen }]}>{post.likes + (liked ? 1 : 0)}</Text>
         </Pressable>
@@ -79,6 +108,12 @@ export default function FeedScreen() {
   const insets = useSafeAreaInsets();
   const [feedTab, setFeedTab] = useState<'buddy' | 'nearby'>('buddy');
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
+
+  const { data: posts, isLoading } = useQuery<FeedPost[]>({
+    queryKey: ['/api/feed'],
+  });
+
+  const feedPosts = posts || [];
 
   return (
     <View style={styles.container}>
@@ -101,14 +136,26 @@ export default function FeedScreen() {
         </View>
       </View>
 
-      <FlatList
-        data={FEED_POSTS}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => <FeedPostItem post={item} />}
-        contentContainerStyle={styles.listContent}
-        showsVerticalScrollIndicator={false}
-        scrollEnabled={FEED_POSTS.length > 0}
-      />
+      {isLoading ? (
+        <View style={styles.loadingState}>
+          <ActivityIndicator color={Colors.dark.accentBlue} />
+        </View>
+      ) : (
+        <FlatList
+          data={feedPosts}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => <FeedPostItem post={item} />}
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
+          scrollEnabled={feedPosts.length > 0}
+          ListEmptyComponent={
+            <View style={styles.emptyState}>
+              <Ionicons name="newspaper-outline" size={48} color={Colors.dark.textMuted} />
+              <Text style={styles.emptyText}>No posts yet</Text>
+            </View>
+          }
+        />
+      )}
     </View>
   );
 }
@@ -123,6 +170,7 @@ const styles = StyleSheet.create({
   toggleText: { fontSize: 13, fontFamily: 'Inter_500Medium', color: Colors.dark.textMuted },
   toggleTextActive: { color: '#FFFFFF' },
   listContent: { paddingHorizontal: 16, gap: 12, paddingBottom: 100 },
+  loadingState: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 80 },
   postCard: { gap: 10 },
   postHeader: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   postInfo: { flex: 1 },
@@ -136,4 +184,6 @@ const styles = StyleSheet.create({
   actionRow: { flexDirection: 'row', gap: 20, paddingTop: 4, borderTopWidth: 1, borderTopColor: Colors.dark.separator },
   actionButton: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingVertical: 4 },
   actionText: { fontSize: 13, fontFamily: 'Inter_500Medium', color: Colors.dark.textMuted },
+  emptyState: { alignItems: 'center', justifyContent: 'center', paddingTop: 80, gap: 12 },
+  emptyText: { fontSize: 15, fontFamily: 'Inter_400Regular', color: Colors.dark.textMuted },
 });

@@ -1,25 +1,23 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { View, Text, ScrollView, StyleSheet, Pressable, Platform, Switch } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import { useQuery, useMutation } from '@tanstack/react-query';
 import { useAuth } from '@/lib/auth-context';
+import { apiRequest, queryClient } from '@/lib/query-client';
 import Colors from '@/constants/colors';
-
-interface SettingToggle {
-  label: string;
-  icon: string;
-  iconSet: 'ionicons' | 'material';
-  value: boolean;
-  key: string;
-}
 
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
   const bottomInset = Platform.OS === 'web' ? 34 : insets.bottom;
+
+  const { data: serverSettings } = useQuery<any>({
+    queryKey: ['/api/settings'],
+  });
 
   const [settings, setSettings] = useState<Record<string, boolean>>({
     ghostMode: false,
@@ -32,9 +30,35 @@ export default function SettingsScreen() {
     kindnessNotifs: true,
   });
 
+  useEffect(() => {
+    if (serverSettings) {
+      setSettings(prev => ({
+        ...prev,
+        ghostMode: serverSettings.ghostMode ?? false,
+        interestDiscovery: serverSettings.interestDiscovery ?? true,
+        mutualFiltering: serverSettings.mutualFiltering ?? true,
+        seeEveryone: serverSettings.seeEveryone ?? false,
+        notifications: serverSettings.notificationsEnabled ?? true,
+      }));
+    }
+  }, [serverSettings]);
+
+  const updateSettingsMutation = useMutation({
+    mutationFn: async (updates: any) => {
+      await apiRequest('PATCH', '/api/settings', updates);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/settings'] });
+    },
+  });
+
   const toggle = (key: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setSettings(prev => ({ ...prev, [key]: !prev[key] }));
+    const newValue = !settings[key];
+    setSettings(prev => ({ ...prev, [key]: newValue }));
+
+    const serverKey = key === 'notifications' ? 'notificationsEnabled' : key;
+    updateSettingsMutation.mutate({ [serverKey]: newValue });
   };
 
   const planLabel = user?.plan === 'executive' ? 'Executive' : user?.plan === 'associate' ? 'Associate' : 'Temp';

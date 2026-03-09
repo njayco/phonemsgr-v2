@@ -1,20 +1,36 @@
-import { View, Text, ScrollView, StyleSheet, Pressable, Platform } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, Pressable, Platform, ActivityIndicator } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useQuery } from '@tanstack/react-query';
 import { Avatar } from '@/components/Avatar';
 import { GlassCard } from '@/components/GlassCard';
 import { useAuth } from '@/lib/auth-context';
-import { RECENT_ACTIVITY } from '@/lib/mock-data';
 import Colors from '@/constants/colors';
+
+function timeAgo(ts: number | string): string {
+  const time = typeof ts === 'string' ? new Date(ts).getTime() : ts;
+  const diff = Date.now() - time;
+  if (diff < 3600000) return `${Math.max(1, Math.floor(diff / 60000))}m ago`;
+  if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+  if (diff < 604800000) return `${Math.floor(diff / 86400000)}d ago`;
+  return `${Math.floor(diff / 604800000)}w ago`;
+}
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const { user, signOut } = useAuth();
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
 
+  const { data: activity } = useQuery<any[]>({
+    queryKey: ['/api/kindness/history'],
+    enabled: !!user,
+  });
+
   if (!user) return null;
+
+  const recentActivity = activity || [];
 
   return (
     <View style={styles.container}>
@@ -54,7 +70,7 @@ export default function ProfileScreen() {
         </GlassCard>
 
         <View style={styles.badgeRow}>
-          {user.badges.map((badge) => {
+          {(user.badges || []).map((badge) => {
             const iconMap: Record<string, string> = {
               'Top Contributor': 'arrow-up-circle',
               'Verified Helper': 'shield-checkmark',
@@ -90,13 +106,16 @@ export default function ProfileScreen() {
 
         <GlassCard>
           <Text style={styles.sectionTitle}>Recent Activity</Text>
-          {RECENT_ACTIVITY.map((item) => (
+          {recentActivity.length === 0 && (
+            <Text style={styles.emptyText}>No activity yet</Text>
+          )}
+          {recentActivity.map((item: any) => (
             <View key={item.id} style={styles.activityRow}>
               <View style={styles.activityBadge}>
                 <Text style={styles.activityPoints}>+{item.points}</Text>
               </View>
               <Text style={styles.activityDesc} numberOfLines={1}>{item.description}</Text>
-              <Text style={styles.activityTime}>{item.timeAgo}</Text>
+              <Text style={styles.activityTime}>{timeAgo(item.createdAt)}</Text>
             </View>
           ))}
         </GlassCard>
@@ -153,6 +172,7 @@ const styles = StyleSheet.create({
   activityPoints: { fontSize: 13, fontFamily: 'Inter_600SemiBold', color: Colors.dark.accentGreen },
   activityDesc: { flex: 1, fontSize: 13, fontFamily: 'Inter_400Regular', color: Colors.dark.text },
   activityTime: { fontSize: 11, fontFamily: 'Inter_400Regular', color: Colors.dark.textMuted },
+  emptyText: { fontSize: 13, fontFamily: 'Inter_400Regular', color: Colors.dark.textMuted, textAlign: 'center', paddingVertical: 12 },
   actionButtons: { gap: 10 },
   upgradeButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: 'rgba(255,184,0,0.1)', borderWidth: 1, borderColor: 'rgba(255,184,0,0.3)', borderRadius: 14, paddingVertical: 14 },
   upgradeText: { fontSize: 15, fontFamily: 'Inter_600SemiBold', color: Colors.dark.warning },

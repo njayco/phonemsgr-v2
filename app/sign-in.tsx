@@ -11,7 +11,9 @@ export default function SignInScreen() {
   const insets = useSafeAreaInsets();
   const { signIn } = useAuth();
   const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
 
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
 
@@ -20,11 +22,24 @@ export default function SignInScreen() {
       Alert.alert('Required', 'Please enter your username');
       return;
     }
+    if (!password.trim()) {
+      Alert.alert('Required', 'Please enter your password');
+      return;
+    }
     setIsLoading(true);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    await signIn(username.trim());
-    setIsLoading(false);
-    router.replace('/(tabs)');
+    setError('');
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      await signIn(username.trim(), password);
+      router.replace('/(tabs)');
+    } catch (err: any) {
+      const msg = err.message?.includes('401')
+        ? 'Invalid username or password'
+        : 'Sign in failed. Please try again.';
+      setError(msg);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -38,6 +53,12 @@ export default function SignInScreen() {
       <View style={styles.content}>
         <Text style={styles.title}>Welcome Back</Text>
         <Text style={styles.subtitle}>Sign in to Phone Msgr</Text>
+
+        {!!error && (
+          <View style={styles.errorBox}>
+            <Text style={styles.errorText}>{error}</Text>
+          </View>
+        )}
 
         <View style={styles.form}>
           <View style={styles.inputWrapper}>
@@ -53,6 +74,22 @@ export default function SignInScreen() {
                 autoCapitalize="none"
                 autoCorrect={false}
                 maxLength={14}
+                testID="sign-in-username"
+              />
+            </View>
+          </View>
+
+          <View style={styles.inputWrapper}>
+            <Text style={styles.inputLabel}>Password</Text>
+            <View style={styles.inputContainer}>
+              <TextInput
+                style={styles.input}
+                value={password}
+                onChangeText={setPassword}
+                placeholder="Password"
+                placeholderTextColor={Colors.dark.textMuted}
+                secureTextEntry
+                testID="sign-in-password"
               />
             </View>
           </View>
@@ -61,9 +98,12 @@ export default function SignInScreen() {
             style={({ pressed }) => [styles.signInButton, pressed && { opacity: 0.85 }, isLoading && { opacity: 0.5 }]}
             onPress={handleSignIn}
             disabled={isLoading}
+            testID="sign-in-button"
           >
             <Text style={styles.signInText}>{isLoading ? 'Signing in...' : 'Sign In'}</Text>
           </Pressable>
+
+          <Text style={styles.demoHint}>Demo: alexchen / demo1234</Text>
         </View>
       </View>
     </View>
@@ -101,6 +141,18 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_400Regular',
     color: Colors.dark.textSecondary,
     marginBottom: 40,
+  },
+  errorBox: {
+    backgroundColor: 'rgba(255, 59, 48, 0.15)',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 16,
+  },
+  errorText: {
+    color: '#FF3B30',
+    fontSize: 14,
+    fontFamily: 'Inter_500Medium',
+    textAlign: 'center',
   },
   form: {
     gap: 24,
@@ -145,5 +197,11 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 17,
     fontFamily: 'Inter_600SemiBold',
+  },
+  demoHint: {
+    fontSize: 12,
+    fontFamily: 'Inter_400Regular',
+    color: Colors.dark.textMuted,
+    textAlign: 'center',
   },
 });

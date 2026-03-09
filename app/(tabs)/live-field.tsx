@@ -1,19 +1,52 @@
-import { useState } from 'react';
-import { View, Text, StyleSheet, Pressable, Platform, Dimensions } from 'react-native';
+import { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, Pressable, Platform, Dimensions, ActivityIndicator } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import { useQuery, useMutation } from '@tanstack/react-query';
 import { Avatar } from '@/components/Avatar';
-import { NEARBY_USERS } from '@/lib/mock-data';
+import { apiRequest } from '@/lib/query-client';
+import { useAuth } from '@/lib/auth-context';
 import Colors from '@/constants/colors';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const RADAR_SIZE = SCREEN_WIDTH - 64;
 
+interface NearbyUser {
+  id: string;
+  username: string;
+  avatar: string;
+  distance: number;
+  interests: string[];
+  angle: number;
+  kindnessScore: number;
+}
+
 export default function LiveFieldScreen() {
   const insets = useSafeAreaInsets();
+  const { user } = useAuth();
   const [feedMode, setFeedMode] = useState<'buddy' | 'nearby'>('nearby');
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
+
+  const updatePresenceMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest('POST', '/api/nearby/update', { latitude: 40.7128, longitude: -74.006 });
+    },
+  });
+
+  useEffect(() => {
+    if (user) {
+      updatePresenceMutation.mutate();
+    }
+  }, [user?.id]);
+
+  const { data: nearbyUsers, isLoading } = useQuery<NearbyUser[]>({
+    queryKey: ['/api/nearby'],
+    enabled: !!user,
+    refetchInterval: 30000,
+  });
+
+  const users = nearbyUsers || [];
 
   const toggleFeed = (mode: 'buddy' | 'nearby') => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -44,46 +77,50 @@ export default function LiveFieldScreen() {
       </View>
 
       <View style={styles.radarContainer}>
-        <View style={[styles.radarOuter, { width: RADAR_SIZE, height: RADAR_SIZE }]}>
-          <View style={styles.radarRing3} />
-          <View style={styles.radarRing2} />
-          <View style={styles.radarRing1} />
-          <View style={styles.radarCenter}>
-            <View style={styles.radarCenterDot} />
-          </View>
+        {isLoading ? (
+          <ActivityIndicator color={Colors.dark.accentGreen} />
+        ) : (
+          <View style={[styles.radarOuter, { width: RADAR_SIZE, height: RADAR_SIZE }]}>
+            <View style={styles.radarRing3} />
+            <View style={styles.radarRing2} />
+            <View style={styles.radarRing1} />
+            <View style={styles.radarCenter}>
+              <View style={styles.radarCenterDot} />
+            </View>
 
-          {NEARBY_USERS.map((user) => {
-            const maxRadius = RADAR_SIZE / 2 - 30;
-            const normalizedDist = Math.min(user.distance / 400, 1);
-            const r = normalizedDist * maxRadius;
-            const rad = (user.angle * Math.PI) / 180;
-            const x = Math.cos(rad) * r;
-            const y = Math.sin(rad) * r;
+            {users.map((u) => {
+              const maxRadius = RADAR_SIZE / 2 - 30;
+              const normalizedDist = Math.min(u.distance / 400, 1);
+              const r = normalizedDist * maxRadius;
+              const rad = (u.angle * Math.PI) / 180;
+              const x = Math.cos(rad) * r;
+              const y = Math.sin(rad) * r;
 
-            return (
-              <View
-                key={user.id}
-                style={[
-                  styles.radarUser,
-                  {
-                    left: RADAR_SIZE / 2 + x - 24,
-                    top: RADAR_SIZE / 2 + y - 24,
-                  },
-                ]}
-              >
-                <Avatar name={user.username} size={36} showGlow glowColor={Colors.dark.accentGreen} />
-                <Text style={styles.radarDistance}>{user.distance}m</Text>
-                <View style={styles.radarInterests}>
-                  {user.interests.slice(0, 2).map((interest) => (
-                    <View key={interest} style={styles.interestChip}>
-                      <Text style={styles.interestText}>{interest}</Text>
-                    </View>
-                  ))}
+              return (
+                <View
+                  key={u.id}
+                  style={[
+                    styles.radarUser,
+                    {
+                      left: RADAR_SIZE / 2 + x - 24,
+                      top: RADAR_SIZE / 2 + y - 24,
+                    },
+                  ]}
+                >
+                  <Avatar name={u.username} size={36} showGlow glowColor={Colors.dark.accentGreen} />
+                  <Text style={styles.radarDistance}>{u.distance}m</Text>
+                  <View style={styles.radarInterests}>
+                    {u.interests.slice(0, 2).map((interest) => (
+                      <View key={interest} style={styles.interestChip}>
+                        <Text style={styles.interestText}>{interest}</Text>
+                      </View>
+                    ))}
+                  </View>
                 </View>
-              </View>
-            );
-          })}
-        </View>
+              );
+            })}
+          </View>
+        )}
 
         <Text style={styles.radiusLabel}>Radius: 400m</Text>
       </View>
@@ -91,7 +128,7 @@ export default function LiveFieldScreen() {
       <View style={[styles.bottomBar, { paddingBottom: Platform.OS === 'web' ? 34 + 84 : 100 }]}>
         <View style={styles.nearbyCountCard}>
           <Ionicons name="radio" size={18} color={Colors.dark.accentGreen} />
-          <Text style={styles.nearbyCountText}>{NEARBY_USERS.length} people nearby</Text>
+          <Text style={styles.nearbyCountText}>{users.length} people nearby</Text>
           <Ionicons name="chevron-forward" size={16} color={Colors.dark.textMuted} />
         </View>
       </View>

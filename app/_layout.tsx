@@ -30,6 +30,9 @@ function RootLayoutNav() {
       <Stack.Screen name="monetization" options={{ animation: 'slide_from_right' }} />
       <Stack.Screen name="offline" options={{ animation: 'slide_from_right' }} />
       <Stack.Screen name="settings" options={{ animation: 'slide_from_right' }} />
+      <Stack.Screen name="new-message" options={{ animation: 'slide_from_right' }} />
+      <Stack.Screen name="create-post" options={{ animation: 'slide_from_right' }} />
+      <Stack.Screen name="nearby-list" options={{ animation: 'slide_from_right' }} />
     </Stack>
   );
 }

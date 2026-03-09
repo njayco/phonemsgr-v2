@@ -1,5 +1,7 @@
 import { WebSocketServer, WebSocket } from "ws";
 import type { Server } from "node:http";
+import type { IncomingMessage } from "node:http";
+import { storage } from "./storage";
 
 interface ConnectedClient {
   ws: WebSocket;
@@ -18,12 +20,13 @@ export function setupWebSocket(server: Server) {
       try {
         const msg = JSON.parse(data.toString());
 
-        if (msg.type === "auth") {
+        if (msg.type === "auth" && msg.userId) {
           userId = msg.userId;
           if (!clients.has(userId)) {
             clients.set(userId, []);
           }
           clients.get(userId)!.push({ ws, userId });
+          storage.setUserOnline(userId, true).catch(() => {});
           ws.send(JSON.stringify({ type: "connected", userId }));
         }
       } catch {}
@@ -36,6 +39,7 @@ export function setupWebSocket(server: Server) {
           const filtered = userClients.filter((c) => c.ws !== ws);
           if (filtered.length === 0) {
             clients.delete(userId);
+            storage.setUserOnline(userId, false).catch(() => {});
           } else {
             clients.set(userId, filtered);
           }

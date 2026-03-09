@@ -23,7 +23,7 @@ import {
   userSettings,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, desc, sql, ne, inArray } from "drizzle-orm";
+import { eq, and, desc, sql, ne, inArray, or, ilike } from "drizzle-orm";
 
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
@@ -43,14 +43,14 @@ export interface IStorage {
   markMessagesRead(threadId: string, userId: string): Promise<void>;
 
   getFeedPosts(limit?: number): Promise<any[]>;
-  createFeedPost(userId: string, content: string, mediaType: string, mediaUrl?: string): Promise<FeedPost>;
+  createFeedPost(userId: string, content: string, mediaType: string, mediaUrl?: string, audience?: string): Promise<FeedPost>;
   likePost(postId: string, userId: string): Promise<void>;
   commentOnPost(postId: string, userId: string, text: string): Promise<void>;
 
   addKindnessPoints(userId: string, points: number, description: string): Promise<void>;
   getKindnessHistory(userId: string, limit?: number): Promise<KindnessEntry[]>;
 
-  getNearbyUsers(userId: string): Promise<any[]>;
+  getNearbyUsers(userId: string, radiusMeters?: number): Promise<any[]>;
   updatePresence(userId: string, lat: number, lng: number): Promise<void>;
 
   getUserSettings(userId: string): Promise<UserSettings | null>;
@@ -61,6 +61,15 @@ export interface IStorage {
 
   isUserInThread(userId: string, threadId: string): Promise<boolean>;
   getThreadParticipantIds(threadId: string): Promise<string[]>;
+
+  searchUsers(query: string, currentUserId: string): Promise<any[]>;
+  getBuddyIds(userId: string): Promise<string[]>;
+  addBuddy(userId: string, buddyId: string): Promise<void>;
+  getBuddyFeedPosts(userId: string, buddyIds: string[]): Promise<any[]>;
+  getNearbyFeedPosts(nearbyUserIds: string[]): Promise<any[]>;
+  getNearbyBuddies(userId: string, radiusMeters: number): Promise<any[]>;
+  getNearbyNonBuddies(userId: string, radiusMeters: number): Promise<any[]>;
+  setUserOnline(userId: string, online: boolean): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -298,10 +307,11 @@ export class DatabaseStorage implements IStorage {
     content: string,
     mediaType: string,
     mediaUrl?: string,
+    audience?: string,
   ): Promise<FeedPost> {
     const [post] = await db
       .insert(feedPosts)
-      .values({ userId, content, mediaType, mediaUrl })
+      .values({ userId, content, mediaType, mediaUrl, audience: audience || "everyone" })
       .returning();
     return post;
   }
@@ -343,16 +353,18 @@ export class DatabaseStorage implements IStorage {
       .limit(limit);
   }
 
-  async getNearbyUsers(userId: string): Promise<any[]> {
+  async getNearbyUsers(userId: string, radiusMeters = 500): Promise<any[]> {
     const allPresence = await db
       .select({
-        userId: nearbyPresence.userId,
+        usrId: nearbyPresence.userId,
         latitude: nearbyPresence.latitude,
         longitude: nearbyPresence.longitude,
         lastSeen: nearbyPresence.lastSeen,
         username: users.username,
+        displayName: users.displayName,
         avatar: users.avatarUrl,
         kindnessScore: users.kindnessScore,
+        isOnline: users.isOnline,
       })
       .from(nearbyPresence)
       .innerJoin(users, eq(nearbyPresence.userId, users.id))
@@ -366,7 +378,7 @@ export class DatabaseStorage implements IStorage {
     const myLat = myPresence[0]?.latitude || 0;
     const myLng = myPresence[0]?.longitude || 0;
 
-    return allPresence.map((p) => {
+    const withDistance = allPresence.map((p) => {
       const distance = Math.round(
         Math.sqrt(Math.pow((p.latitude - myLat) * 111000, 2) + Math.pow((p.longitude - myLng) * 111000, 2)),
       );
@@ -374,15 +386,20 @@ export class DatabaseStorage implements IStorage {
         (Math.atan2(p.longitude - myLng, p.latitude - myLat) * 180) / Math.PI,
       );
       return {
-        id: p.userId,
+        id: p.usrId,
         username: p.username,
+        displayName: p.displayName,
         avatar: p.avatar || "",
-        distance: Math.max(50, Math.min(distance, 500)),
+        distance: Math.max(50, Math.min(distance, radiusMeters)),
+        rawDistance: distance,
         interests: [],
         angle: ((angle % 360) + 360) % 360,
         kindnessScore: p.kindnessScore,
+        isOnline: p.isOnline,
       };
     });
+
+    return withDistance.filter((u) => u.rawDistance <= radiusMeters);
   }
 
   async updatePresence(userId: string, lat: number, lng: number): Promise<void> {
@@ -459,6 +476,174 @@ export class DatabaseStorage implements IStorage {
     } else {
       await db.insert(monetizationSettings).values({ userId, ...safeUpdates });
     }
+  }
+
+  async searchUsers(query: string, currentUserId: string): Promise<any[]> {
+    let normalized = query.trim();
+    if (normalized.startsWith("@")) normalized = normalized.slice(1);
+    if (normalized.startsWith("+1")) normalized = normalized.slice(2);
+    if (normalized.startsWith("+")) normalized = normalized.slice(1);
+    if (!normalized) return [];
+
+    const pattern = `%${normalized}%`;
+    const results = await db
+      .select({
+        id: users.id,
+        username: users.username,
+        displayName: users.displayName,
+        avatarUrl: users.avatarUrl,
+        isOnline: users.isOnline,
+      })
+      .from(users)
+      .where(
+        and(
+          ne(users.id, currentUserId),
+          or(
+            ilike(users.displayName, pattern),
+            ilike(users.username, pattern),
+            ilike(users.phone, pattern),
+          ),
+        ),
+      )
+      .limit(20);
+
+    return results;
+  }
+
+  async getBuddyIds(userId: string): Promise<string[]> {
+    const rows = await db
+      .select({ buddyId: buddyConnections.buddyId, peerId: buddyConnections.userId })
+      .from(buddyConnections)
+      .where(
+        and(
+          or(
+            eq(buddyConnections.userId, userId),
+            eq(buddyConnections.buddyId, userId),
+          ),
+          eq(buddyConnections.status, "accepted"),
+        ),
+      );
+    return rows.map((r) => (r.buddyId === userId ? r.peerId : r.buddyId));
+  }
+
+  async addBuddy(userId: string, buddyId: string): Promise<void> {
+    try {
+      await db.insert(buddyConnections).values({ userId, buddyId, status: "accepted" });
+    } catch {
+      // already exists
+    }
+  }
+
+  async getBuddyFeedPosts(userId: string, buddyIds: string[]): Promise<any[]> {
+    const allIds = [userId, ...buddyIds];
+    const posts = await db
+      .select({
+        id: feedPosts.id,
+        userId: feedPosts.userId,
+        username: users.username,
+        avatar: users.avatarUrl,
+        content: feedPosts.content,
+        mediaType: feedPosts.mediaType,
+        mediaUrl: feedPosts.mediaUrl,
+        audience: feedPosts.audience,
+        kindnessEarned: feedPosts.kindnessEarned,
+        likesCount: feedPosts.likesCount,
+        commentsCount: feedPosts.commentsCount,
+        createdAt: feedPosts.createdAt,
+      })
+      .from(feedPosts)
+      .innerJoin(users, eq(feedPosts.userId, users.id))
+      .where(
+        and(
+          inArray(feedPosts.userId, allIds),
+          or(
+            eq(feedPosts.audience, "everyone"),
+            eq(feedPosts.audience, "buddy"),
+            eq(feedPosts.userId, userId),
+          ),
+        ),
+      )
+      .orderBy(desc(feedPosts.createdAt))
+      .limit(30);
+
+    return posts.map((p) => ({
+      id: p.id,
+      userId: p.userId,
+      username: p.username,
+      avatar: p.avatar,
+      content: p.content,
+      mediaType: p.mediaType,
+      mediaUrl: p.mediaUrl,
+      audience: p.audience,
+      timestamp: p.createdAt.getTime(),
+      kindnessEarned: p.kindnessEarned,
+      likes: p.likesCount,
+      comments: p.commentsCount,
+    }));
+  }
+
+  async getNearbyFeedPosts(nearbyUserIds: string[]): Promise<any[]> {
+    if (nearbyUserIds.length === 0) return [];
+    const posts = await db
+      .select({
+        id: feedPosts.id,
+        userId: feedPosts.userId,
+        username: users.username,
+        avatar: users.avatarUrl,
+        content: feedPosts.content,
+        mediaType: feedPosts.mediaType,
+        mediaUrl: feedPosts.mediaUrl,
+        audience: feedPosts.audience,
+        kindnessEarned: feedPosts.kindnessEarned,
+        likesCount: feedPosts.likesCount,
+        commentsCount: feedPosts.commentsCount,
+        createdAt: feedPosts.createdAt,
+      })
+      .from(feedPosts)
+      .innerJoin(users, eq(feedPosts.userId, users.id))
+      .where(
+        and(
+          inArray(feedPosts.userId, nearbyUserIds),
+          or(
+            eq(feedPosts.audience, "everyone"),
+            eq(feedPosts.audience, "nearby"),
+          ),
+        ),
+      )
+      .orderBy(desc(feedPosts.createdAt))
+      .limit(30);
+
+    return posts.map((p) => ({
+      id: p.id,
+      userId: p.userId,
+      username: p.username,
+      avatar: p.avatar,
+      content: p.content,
+      mediaType: p.mediaType,
+      mediaUrl: p.mediaUrl,
+      audience: p.audience,
+      timestamp: p.createdAt.getTime(),
+      kindnessEarned: p.kindnessEarned,
+      likes: p.likesCount,
+      comments: p.commentsCount,
+    }));
+  }
+
+  async getNearbyBuddies(userId: string, radiusMeters = 400): Promise<any[]> {
+    const buddyIds = await this.getBuddyIds(userId);
+    if (buddyIds.length === 0) return [];
+    const allNearby = await this.getNearbyUsers(userId, radiusMeters);
+    return allNearby.filter((u) => buddyIds.includes(u.id));
+  }
+
+  async getNearbyNonBuddies(userId: string, radiusMeters = 400): Promise<any[]> {
+    const buddyIds = await this.getBuddyIds(userId);
+    const allNearby = await this.getNearbyUsers(userId, radiusMeters);
+    return allNearby.filter((u) => !buddyIds.includes(u.id));
+  }
+
+  async setUserOnline(userId: string, online: boolean): Promise<void> {
+    await db.update(users).set({ isOnline: online }).where(eq(users.id, userId));
   }
 }
 

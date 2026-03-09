@@ -209,18 +209,60 @@ export async function registerRoutes(app: Express): Promise<Server> {
     return res.json(msg);
   });
 
+  app.get("/api/users/search", requireAuth, async (req, res) => {
+    const q = (req.query.q as string) || "";
+    if (q.trim().length === 0) {
+      return res.json([]);
+    }
+    const results = await storage.searchUsers(q, req.session.userId!);
+    return res.json(results);
+  });
+
+  app.post("/api/buddies/:id", requireAuth, async (req, res) => {
+    const userId = req.session.userId!;
+    const buddyId = req.params.id;
+    if (userId === buddyId) {
+      return res.status(400).json({ message: "Cannot add yourself" });
+    }
+    await storage.addBuddy(userId, buddyId);
+    return res.json({ success: true });
+  });
+
+  app.get("/api/buddies", requireAuth, async (req, res) => {
+    const buddyIds = await storage.getBuddyIds(req.session.userId!);
+    return res.json(buddyIds);
+  });
+
   app.get("/api/feed", requireAuth, async (req, res) => {
+    const userId = req.session.userId!;
+    const type = req.query.type as string;
+
+    if (type === "buddy") {
+      const buddyIds = await storage.getBuddyIds(userId);
+      const posts = await storage.getBuddyFeedPosts(userId, buddyIds);
+      return res.json(posts);
+    }
+
+    if (type === "nearby") {
+      const nearbyUsers = await storage.getNearbyUsers(userId, 400);
+      const nearbyIds = nearbyUsers.map((u: any) => u.id);
+      nearbyIds.push(userId);
+      const posts = await storage.getNearbyFeedPosts(nearbyIds);
+      return res.json(posts);
+    }
+
     const posts = await storage.getFeedPosts();
     return res.json(posts);
   });
 
   app.post("/api/feed", requireAuth, async (req, res) => {
-    const { content, mediaType, mediaUrl } = req.body;
+    const { content, mediaType, mediaUrl, audience } = req.body;
     const post = await storage.createFeedPost(
       req.session.userId!,
       content || "",
       mediaType || "text",
       mediaUrl,
+      audience,
     );
     return res.status(201).json(post);
   });
@@ -245,7 +287,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.get("/api/nearby", requireAuth, async (req, res) => {
-    const nearby = await storage.getNearbyUsers(req.session.userId!);
+    const userId = req.session.userId!;
+    const type = req.query.type as string;
+    const radius = parseInt(req.query.radius as string) || 400;
+
+    if (type === "buddy") {
+      const nearby = await storage.getNearbyBuddies(userId, radius);
+      return res.json(nearby);
+    }
+
+    if (type === "nearby") {
+      const nearby = await storage.getNearbyNonBuddies(userId, radius);
+      return res.json(nearby);
+    }
+
+    const nearby = await storage.getNearbyUsers(userId, radius);
     return res.json(nearby);
   });
 

@@ -78,7 +78,7 @@ server/
 ├── auth.ts                  # Password hashing (scrypt) + session auth helpers
 ├── websocket.ts             # WebSocket server (user tracking, message broadcast, presence)
 ├── uploads.ts               # Multer file upload middleware (avatar, media, attachment)
-├── seed.ts                  # Demo data seeding (6 users, threads, messages, posts)
+├── seed.ts                  # Demo data seeding (6 users, threads, messages, posts, buddy connections, presence)
 └── templates/
     └── landing-page.html    # Web landing page
 
@@ -88,6 +88,9 @@ app/
 ├── sign-in.tsx              # Sign in with username/password (API-backed)
 ├── sign-up.tsx              # Registration with username/password/display name
 ├── +not-found.tsx           # 404 error screen
+├── new-message.tsx          # New message composer with user search (name/username/phone)
+├── create-post.tsx          # Create feed post with audience picker (everyone/buddy/nearby)
+├── nearby-list.tsx          # Nearby people list with message/add buddy actions
 ├── pricing.tsx              # Subscription plan selection (modal)
 ├── monetization.tsx         # Revenue center (Executive tier, API-backed)
 ├── offline.tsx              # Mesh mode / offline resilience
@@ -97,9 +100,9 @@ app/
 └── (tabs)/
     ├── _layout.tsx          # Bottom tab navigation (5 tabs) + WebSocket connect/disconnect
     ├── index.tsx            # Home dashboard (kindness score, plan, recent activity)
-    ├── live-field.tsx       # Proximity radar discovery (nearby users API)
-    ├── feed.tsx             # Social feed with like/comment (Buddy/Nearby toggle)
-    ├── messages.tsx         # Chat thread list (real threads from API)
+    ├── live-field.tsx       # GPS proximity radar (buddy vs nearby toggle, real location)
+    ├── feed.tsx             # Social feed with buddy/nearby filtering + create post button
+    ├── messages.tsx         # Chat thread list with compose button navigation
     └── profile.tsx          # User profile with kindness score + badges
 
 components/
@@ -155,10 +158,12 @@ All data routes require session authentication (`req.session.userId`).
 |----------|-----------|
 | **Auth** | `POST /api/auth/register`, `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/auth/me` |
 | **Profile** | `GET /api/profile/:id`, `PATCH /api/profile` |
+| **Search** | `GET /api/users/search?q=` (searches displayName, username, phone) |
+| **Buddies** | `GET /api/buddies`, `POST /api/buddies/:id` |
 | **Threads** | `GET /api/threads`, `POST /api/threads`, `GET /api/threads/:id/messages`, `POST /api/threads/:id/messages` |
-| **Feed** | `GET /api/feed`, `POST /api/feed`, `POST /api/feed/:id/like`, `POST /api/feed/:id/comment` |
+| **Feed** | `GET /api/feed?type=buddy\|nearby`, `POST /api/feed` (with audience), `POST /api/feed/:id/like`, `POST /api/feed/:id/comment` |
 | **Kindness** | `GET /api/kindness/history` |
-| **Nearby** | `GET /api/nearby`, `POST /api/nearby/update` |
+| **Nearby** | `GET /api/nearby?type=buddy\|nearby&radius=400`, `POST /api/nearby/update` |
 | **Settings** | `GET /api/settings`, `PATCH /api/settings` |
 | **Monetization** | `GET /api/monetization`, `PATCH /api/monetization` |
 | **Upload** | `POST /api/upload/avatar`, `POST /api/upload/media`, `POST /api/upload/attachment` |
@@ -221,6 +226,7 @@ All data routes require session authentication (`req.session.userId`).
 - Search/filter threads
 - E2E encryption indicator chips
 - Online/offline mode chips per contact
+- **New Message Composer** — search users by name, @username, or phone number
 - Chat thread with dark futuristic bubble styling
 - Blue outgoing bubbles, dark glass incoming bubbles
 - **BEAM** button replaces traditional "Send"
@@ -229,14 +235,37 @@ All data routes require session authentication (`req.session.userId`).
 - WebSocket realtime message delivery
 - Messages persist in PostgreSQL
 
+### User Search & Buddy System
+- Search users by display name, @username, or phone number
+- Debounced search with real-time results
+- Online/offline status indicators on search results
+- Add buddy connections from nearby people list
+- Bidirectional buddy relationships (both directions stored)
+
 ### Live Field Discovery
 - Radar visualization with concentric proximity rings
+- **Real GPS integration** — uses device location (expo-location on native, web geolocation API)
+- GPS status indicator in header (green = granted, gray = fallback)
 - Nearby user avatars positioned by distance and angle
 - Distance labels (meters) on each user
-- Shared interest chips per user
-- Toggle between Buddy Feed and Nearby Feed
-- Bottom bar showing total nearby count
+- Online glow indicators on radar avatars
+- Toggle between **Buddy Feed** (only buddies) and **Nearby Feed** (non-buddies)
+- Bottom bar showing context-aware count ("3 buddies nearby" vs "6 people nearby")
+- **Tappable bottom bar** opens full nearby people list
 - Radius indicator (400m default, expandable with premium tiers)
+
+### Nearby People List
+- Full list of nearby users with distance, online status, and interest chips
+- **Message** action — creates or reuses existing chat thread
+- **Add Buddy** action — adds non-buddy users as buddies
+- Separate views for buddies and non-buddies (passed via route params)
+
+### Feed & Content Posting
+- Social feed with buddy/nearby audience filtering
+- **Create Post** screen with audience picker (Everyone, Buddies, Nearby)
+- Content type selector (text, image, video, audio, document)
+- Feed toggles between Buddy List and Nearby 400m views
+- Like and comment interactions with kindness rewards
 
 ### Phone Feed
 - Toggle between Buddy List and Nearby feeds

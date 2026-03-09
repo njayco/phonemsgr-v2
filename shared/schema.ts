@@ -9,31 +9,39 @@ import {
   real,
   primaryKey,
   uniqueIndex,
+  index,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
-export const users = pgTable("users", {
-  id: varchar("id", { length: 36 })
-    .primaryKey()
-    .default(sql`gen_random_uuid()`),
-  username: text("username").notNull().unique(),
-  password: text("password").notNull(),
-  displayName: text("display_name").notNull().default(""),
-  phone: text("phone").default(""),
-  avatarUrl: text("avatar_url").default(""),
-  plan: text("plan").notNull().default("temp"),
-  kindnessScore: integer("kindness_score").notNull().default(0),
-  reputationLevel: integer("reputation_level").notNull().default(1),
-  isOnline: boolean("is_online").notNull().default(false),
-  inboxPrice: real("inbox_price").notNull().default(0),
-  monthlyRevenue: real("monthly_revenue").notNull().default(0),
-  connections: integer("connections").notNull().default(0),
-  messagesCount: integer("messages_count").notNull().default(0),
-  eventsCount: integer("events_count").notNull().default(0),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+export const users = pgTable(
+  "users",
+  {
+    id: varchar("id", { length: 36 })
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    username: text("username").notNull().unique(),
+    password: text("password").notNull(),
+    displayName: text("display_name").notNull().default(""),
+    phone: text("phone").default(""),
+    avatarUrl: text("avatar_url").default(""),
+    plan: text("plan").notNull().default("temp"),
+    kindnessScore: integer("kindness_score").notNull().default(0),
+    reputationLevel: integer("reputation_level").notNull().default(1),
+    isOnline: boolean("is_online").notNull().default(false),
+    inboxPrice: real("inbox_price").notNull().default(0),
+    monthlyRevenue: real("monthly_revenue").notNull().default(0),
+    connections: integer("connections").notNull().default(0),
+    messagesCount: integer("messages_count").notNull().default(0),
+    eventsCount: integer("events_count").notNull().default(0),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("users_display_name_idx").on(table.displayName),
+    index("users_phone_idx").on(table.phone),
+  ],
+);
 
 export const userInterests = pgTable(
   "user_interests",
@@ -112,6 +120,7 @@ export const feedPosts = pgTable("feed_posts", {
   content: text("content").notNull().default(""),
   mediaType: text("media_type").notNull().default("text"),
   mediaUrl: text("media_url"),
+  audience: text("audience").notNull().default("everyone"),
   kindnessEarned: integer("kindness_earned").notNull().default(0),
   likesCount: integer("likes_count").notNull().default(0),
   commentsCount: integer("comments_count").notNull().default(0),
@@ -178,18 +187,26 @@ export const buddyConnections = pgTable(
     status: text("status").notNull().default("pending"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
-  (table) => [uniqueIndex("buddy_connection_unique").on(table.userId, table.buddyId)],
+  (table) => [
+    uniqueIndex("buddy_connection_unique").on(table.userId, table.buddyId),
+    index("buddy_connections_user_status_idx").on(table.userId, table.status),
+    index("buddy_connections_buddy_status_idx").on(table.buddyId, table.status),
+  ],
 );
 
-export const nearbyPresence = pgTable("nearby_presence", {
-  userId: varchar("user_id", { length: 36 })
-    .primaryKey()
-    .references(() => users.id, { onDelete: "cascade" }),
-  latitude: real("latitude").notNull().default(0),
-  longitude: real("longitude").notNull().default(0),
-  radius: integer("radius").notNull().default(500),
-  lastSeen: timestamp("last_seen").defaultNow().notNull(),
-});
+export const nearbyPresence = pgTable(
+  "nearby_presence",
+  {
+    userId: varchar("user_id", { length: 36 })
+      .primaryKey()
+      .references(() => users.id, { onDelete: "cascade" }),
+    latitude: real("latitude").notNull().default(0),
+    longitude: real("longitude").notNull().default(0),
+    radius: integer("radius").notNull().default(500),
+    lastSeen: timestamp("last_seen").defaultNow().notNull(),
+  },
+  (table) => [index("nearby_presence_last_seen_idx").on(table.lastSeen)],
+);
 
 export const events = pgTable("events", {
   id: varchar("id", { length: 36 })

@@ -9,6 +9,7 @@ import {
   feedPosts,
   kindnessLedger,
   nearbyPresence,
+  buddyConnections,
 } from "@shared/schema";
 import { hashPassword } from "./auth";
 import { eq } from "drizzle-orm";
@@ -195,11 +196,21 @@ export async function seedDatabase() {
       eq(threadParticipants.threadId, "thread-3"),
     );
 
+  await db.insert(buddyConnections).values([
+    { userId: "user-1", buddyId: "user-2", status: "accepted" },
+    { userId: "user-1", buddyId: "user-3", status: "accepted" },
+    { userId: "user-1", buddyId: "user-6", status: "accepted" },
+    { userId: "user-2", buddyId: "user-3", status: "accepted" },
+    { userId: "user-4", buddyId: "user-5", status: "accepted" },
+  ]);
+
   const seedPosts = [
-    { userId: "user-6", content: "Quantum Community Livestream", mediaType: "video", kindnessEarned: 120, likesCount: 45, commentsCount: 12, createdAt: new Date(now - 120000) },
-    { userId: "user-3", content: "Gallery Opening Night", mediaType: "image", kindnessEarned: 95, likesCount: 32, commentsCount: 8, createdAt: new Date(now - 900000) },
-    { userId: "user-4", content: "New Track: Sonic Dreams", mediaType: "audio", kindnessEarned: 150, likesCount: 67, commentsCount: 23, createdAt: new Date(now - 3600000) },
-    { userId: "user-5", content: "Future of Communication", mediaType: "document", kindnessEarned: 210, likesCount: 89, commentsCount: 31, createdAt: new Date(now - 10800000) },
+    { userId: "user-6", content: "Quantum Community Livestream", mediaType: "video", audience: "everyone", kindnessEarned: 120, likesCount: 45, commentsCount: 12, createdAt: new Date(now - 120000) },
+    { userId: "user-3", content: "Gallery Opening Night", mediaType: "image", audience: "buddy", kindnessEarned: 95, likesCount: 32, commentsCount: 8, createdAt: new Date(now - 900000) },
+    { userId: "user-4", content: "New Track: Sonic Dreams", mediaType: "audio", audience: "nearby", kindnessEarned: 150, likesCount: 67, commentsCount: 23, createdAt: new Date(now - 3600000) },
+    { userId: "user-5", content: "Future of Communication", mediaType: "document", audience: "everyone", kindnessEarned: 210, likesCount: 89, commentsCount: 31, createdAt: new Date(now - 10800000) },
+    { userId: "user-1", content: "Great morning walk! The community park looks amazing today.", mediaType: "text", audience: "buddy", kindnessEarned: 30, likesCount: 12, commentsCount: 4, createdAt: new Date(now - 1800000) },
+    { userId: "user-2", content: "Just finished the networking workshop. Incredible insights from everyone!", mediaType: "text", audience: "everyone", kindnessEarned: 45, likesCount: 18, commentsCount: 6, createdAt: new Date(now - 5400000) },
   ];
 
   await db.insert(feedPosts).values(seedPosts);
@@ -215,11 +226,12 @@ export async function seedDatabase() {
   await db.insert(kindnessLedger).values(activityEntries);
 
   const presenceData = [
-    { userId: "user-2", latitude: 40.7128, longitude: -74.006, lastSeen: new Date(now - 60000) },
-    { userId: "user-3", latitude: 40.7135, longitude: -74.0055, lastSeen: new Date(now - 120000) },
-    { userId: "user-4", latitude: 40.714, longitude: -74.0065, lastSeen: new Date(now - 300000) },
-    { userId: "user-5", latitude: 40.7122, longitude: -74.007, lastSeen: new Date(now - 600000) },
-    { userId: "user-6", latitude: 40.7145, longitude: -74.005, lastSeen: new Date(now - 180000) },
+    { userId: "user-1", latitude: 40.7128, longitude: -74.006, lastSeen: new Date(now - 30000) },
+    { userId: "user-2", latitude: 40.7130, longitude: -74.0058, lastSeen: new Date(now - 60000) },
+    { userId: "user-3", latitude: 40.7126, longitude: -74.0055, lastSeen: new Date(now - 120000) },
+    { userId: "user-4", latitude: 40.7132, longitude: -74.0065, lastSeen: new Date(now - 300000) },
+    { userId: "user-5", latitude: 40.7125, longitude: -74.0070, lastSeen: new Date(now - 600000) },
+    { userId: "user-6", latitude: 40.7131, longitude: -74.0050, lastSeen: new Date(now - 180000) },
   ];
 
   await db.insert(nearbyPresence).values(presenceData);

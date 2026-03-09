@@ -1,7 +1,7 @@
 # Phone Msgr 2026 - Kindness-Based Social Messenger
 
 ## Overview
-Phone Msgr is a kindness-based social messenger mobile app built with React Native / Expo. It enables local social connections, secure messaging, and community engagement with a premium futuristic dark UI aesthetic. Phase 2 implements a full PostgreSQL backend with session auth, realtime WebSocket messaging, and file uploads.
+Phone Msgr is a kindness-based social messenger mobile app built with React Native / Expo. It enables local social connections, secure messaging, and community engagement with a premium futuristic dark UI aesthetic. Phase 3 adds user search, feed audience filtering, GPS-based live field, nearby people list, and online/offline presence tracking.
 
 ## Tech Stack
 - **Frontend**: React Native, Expo SDK 54, TypeScript, Expo Router (file-based routing)
@@ -11,6 +11,7 @@ Phone Msgr is a kindness-based social messenger mobile app built with React Nati
 - **Realtime**: WebSocket (ws package) for live message delivery and presence
 - **State**: React Query for server state, React Context for auth
 - **Uploads**: Multer for file uploads (avatars, media, attachments)
+- **Location**: expo-location for GPS, web geolocation API fallback
 - **Styling**: React Native StyleSheet with custom dark theme (neon green/blue accents)
 - **Fonts**: Inter (400, 500, 600, 700 weights)
 
@@ -21,13 +22,13 @@ shared/
 
 server/
   index.ts                 # Express server entry with session middleware + WebSocket setup
-  routes.ts                # All API routes (auth, threads, messages, feed, settings, etc.)
+  routes.ts                # All API routes (auth, threads, messages, feed, settings, nearby, buddies, search)
   storage.ts               # DatabaseStorage class (IStorage interface, all CRUD methods)
   db.ts                    # Drizzle database connection pool
   auth.ts                  # Password hashing (scrypt) + session auth helpers
-  websocket.ts             # WebSocket server (user tracking, message broadcast, presence)
+  websocket.ts             # WebSocket server (user tracking, message broadcast, online/offline presence)
   uploads.ts               # Multer file upload middleware (avatar, media, attachment)
-  seed.ts                  # Demo data seeding (6 users, threads, messages, posts)
+  seed.ts                  # Demo data seeding (6 users, threads, messages, posts, buddy connections, presence)
   templates/landing-page.html
 
 app/
@@ -35,13 +36,16 @@ app/
   index.tsx                # Welcome/landing screen (redirects if authed)
   sign-in.tsx              # Sign in with username/password (API-backed)
   sign-up.tsx              # Registration with username/password/display name
+  new-message.tsx          # New message composer with user search (name/username/phone)
+  create-post.tsx          # Create feed post with audience picker (everyone/buddy/nearby)
+  nearby-list.tsx          # Nearby people list with message/add buddy actions
   +not-found.tsx           # 404 screen
   (tabs)/
     _layout.tsx            # Tab navigation + WebSocket connect/disconnect
     index.tsx              # Home dashboard (kindness score, plan, recent activity)
-    live-field.tsx         # Proximity radar discovery (nearby users API)
-    feed.tsx               # Social feed with like/comment (Buddy/Nearby tabs)
-    messages.tsx           # Chat thread list (real threads from API)
+    live-field.tsx         # GPS proximity radar (buddy vs nearby toggle, real location)
+    feed.tsx               # Social feed with buddy/nearby filtering + create post button
+    messages.tsx           # Chat thread list with compose button
     profile.tsx            # User profile with kindness score + badges
   chat/[id].tsx            # Chat thread with BEAM send (real messages API)
   pricing.tsx              # Subscription plans (modal)
@@ -69,13 +73,14 @@ lib/
 
 ## Database Schema (PostgreSQL + Drizzle ORM)
 Key tables in `shared/schema.ts`:
-- `users` — profiles with plan tier, kindness score, reputation
+- `users` — profiles with plan tier, kindness score, reputation, isOnline flag
 - `user_interests`, `user_badges` — user metadata
 - `message_threads`, `thread_participants`, `messages` — messaging
-- `feed_posts`, `feed_comments`, `feed_reactions` — social feed
+- `feed_posts` — social feed with `audience` column (everyone/buddy/nearby)
+- `feed_comments`, `feed_reactions` — feed interactions
 - `kindness_ledger` — kindness point history
-- `buddy_connections` — friend/buddy relationships
-- `nearby_presence` — location-based discovery
+- `buddy_connections` — friend/buddy relationships (bidirectional, status: pending/accepted)
+- `nearby_presence` — location-based discovery (lat/lng/lastSeen)
 - `events` — hosted events (monetization)
 - `monetization_settings`, `user_settings` — per-user config
 - `session` — express-session store (connect-pg-simple)
@@ -84,10 +89,12 @@ Key tables in `shared/schema.ts`:
 All data routes require session authentication (`req.session.userId`).
 
 **Auth**: POST /api/auth/register, /api/auth/login, /api/auth/logout, GET /api/auth/me
-**Threads**: GET /api/threads, GET /api/threads/:id/messages, POST /api/threads/:id/messages
-**Feed**: GET /api/feed, POST /api/feed, POST /api/feed/:id/like, POST /api/feed/:id/comment
+**Threads**: GET /api/threads, POST /api/threads, GET /api/threads/:id/messages, POST /api/threads/:id/messages
+**Feed**: GET /api/feed?type=buddy|nearby, POST /api/feed (with audience), POST /api/feed/:id/like, POST /api/feed/:id/comment
+**Search**: GET /api/users/search?q= (searches displayName, username, phone)
+**Buddies**: GET /api/buddies, POST /api/buddies/:id
 **Kindness**: GET /api/kindness/history
-**Nearby**: GET /api/nearby, POST /api/nearby/update
+**Nearby**: GET /api/nearby?type=buddy|nearby&radius=400, POST /api/nearby/update
 **Settings**: GET /api/settings, PATCH /api/settings
 **Monetization**: GET /api/monetization, PATCH /api/monetization
 **Upload**: POST /api/upload/avatar, /api/upload/media, /api/upload/attachment
@@ -95,6 +102,8 @@ All data routes require session authentication (`req.session.userId`).
 ## Demo Credentials
 - Username: `alexchen` / Password: `demo1234`
 - 5 other demo users seeded automatically on first startup
+- Demo buddy connections: alexchen ↔ barbaraw, alexchen ↔ miastardust, alexchen ↔ quantumq
+- All demo users have nearby presence entries within 400m of each other
 
 ## Design System
 - Background: #0A0A0F (deep black)
@@ -113,3 +122,11 @@ All data routes require session authentication (`req.session.userId`).
 - `DATABASE_URL` — PostgreSQL connection string (auto-provided by Replit)
 - `SESSION_SECRET` — Session signing secret
 - `EXPO_PUBLIC_DOMAIN` — Backend domain for API requests (injected at dev/build time)
+
+## Important Notes
+- After login/signup use `router.replace('/')` NOT `router.replace('/(tabs)')` to avoid NativeStack crash
+- `db:push` requires `--force` flag to avoid interactive prompt
+- WebSocket tracks online/offline presence: sets isOnline true on connect, false when all connections close
+- Feed audience values: "everyone", "buddy", "nearby" (default "everyone")
+- Nearby queries accept radius in meters (default 400m)
+- GPS: uses expo-location on native, web geolocation API on web, falls back to NYC coords

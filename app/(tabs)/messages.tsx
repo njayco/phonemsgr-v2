@@ -90,7 +90,7 @@ export default function MessagesScreen() {
     <View style={styles.container}>
       <View style={[styles.header, { paddingTop: topInset + 12 }]}>
         <Text style={styles.headerTitle}>Messages</Text>
-        <Pressable style={styles.composeButton}>
+        <Pressable style={styles.composeButton} onPress={() => router.push('/new-message')} testID="compose-message">
           <Ionicons name="create-outline" size={22} color={Colors.dark.accentBlue} />
         </Pressable>
       </View>

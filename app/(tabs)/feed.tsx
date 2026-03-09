@@ -1,13 +1,15 @@
 import { useState } from 'react';
 import { View, Text, FlatList, StyleSheet, Pressable, Platform, ActivityIndicator } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { Avatar } from '@/components/Avatar';
 import { GlassCard } from '@/components/GlassCard';
-import { apiRequest, queryClient } from '@/lib/query-client';
+import { apiRequest, queryClient, getApiUrl } from '@/lib/query-client';
 import Colors from '@/constants/colors';
+import { fetch } from 'expo/fetch';
 
 interface FeedPost {
   id: string;
@@ -110,7 +112,15 @@ export default function FeedScreen() {
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
 
   const { data: posts, isLoading } = useQuery<FeedPost[]>({
-    queryKey: ['/api/feed'],
+    queryKey: ['/api/feed', feedTab],
+    queryFn: async () => {
+      const baseUrl = getApiUrl();
+      const url = new URL('/api/feed', baseUrl);
+      url.searchParams.set('type', feedTab);
+      const res = await fetch(url.toString(), { credentials: 'include' });
+      if (!res.ok) return [];
+      return res.json();
+    },
   });
 
   const feedPosts = posts || [];
@@ -122,17 +132,30 @@ export default function FeedScreen() {
           <View style={styles.toggleRow}>
             <Pressable
               style={[styles.toggleBtn, feedTab === 'buddy' && styles.toggleBtnActive]}
-              onPress={() => setFeedTab('buddy')}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setFeedTab('buddy');
+              }}
             >
               <Text style={[styles.toggleText, feedTab === 'buddy' && styles.toggleTextActive]}>Buddy List</Text>
             </Pressable>
             <Pressable
               style={[styles.toggleBtn, feedTab === 'nearby' && styles.toggleBtnActive]}
-              onPress={() => setFeedTab('nearby')}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setFeedTab('nearby');
+              }}
             >
               <Text style={[styles.toggleText, feedTab === 'nearby' && styles.toggleTextActive]}>Nearby 400m</Text>
             </Pressable>
           </View>
+          <Pressable
+            style={styles.createPostBtn}
+            onPress={() => router.push('/create-post')}
+            testID="create-post-button"
+          >
+            <Ionicons name="add" size={22} color={Colors.dark.accentBlue} />
+          </Pressable>
         </View>
       </View>
 
@@ -163,7 +186,8 @@ export default function FeedScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.dark.background },
   headerContainer: { paddingHorizontal: 16, paddingBottom: 12 },
-  headerTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
+  headerTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  createPostBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: Colors.dark.surfaceElevated, alignItems: 'center', justifyContent: 'center' },
   toggleRow: { flexDirection: 'row', backgroundColor: Colors.dark.surfaceElevated, borderRadius: 12, padding: 3 },
   toggleBtn: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 10 },
   toggleBtnActive: { backgroundColor: Colors.dark.accentBlue },

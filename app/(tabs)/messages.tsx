@@ -41,14 +41,12 @@ function ChatRow({ thread }: { thread: ChatThread }) {
       }}
       testID={`chat-thread-${thread.id}`}
     >
-      <Pressable style={styles.avatarContainer} onPress={(e) => { e.stopPropagation(); router.push(`/profile/${thread.participantId}`); }}>
+      <View style={styles.avatarContainer}>
         <Avatar name={thread.participantName} size={48} showGlow={thread.isOnline} glowColor={Colors.dark.onlineGreen} />
-      </Pressable>
+      </View>
       <View style={styles.chatInfo}>
         <View style={styles.chatTopRow}>
-          <Pressable onPress={(e) => { e.stopPropagation(); router.push(`/profile/${thread.participantId}`); }}>
-            <Text style={styles.chatName} numberOfLines={1}>{thread.participantName}</Text>
-          </Pressable>
+          <Text style={styles.chatName} numberOfLines={1}>{thread.participantName}</Text>
           <Text style={styles.chatTime}>{timeLabel(thread.lastMessageTime)}</Text>
         </View>
         <View style={styles.chatBottomRow}>

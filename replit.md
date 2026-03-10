@@ -54,7 +54,7 @@ app/
   profile/
     _layout.tsx            # Profile stack layout
     [id].tsx               # Public user profile (bio, link, posts, education, badges, message button)
-  chat/[id].tsx            # Chat thread with optimistic send, delivery receipts (✓ ✓✓ blue ✓✓), live typing preview, REDACTED deletion + local cache
+  chat/[id].tsx            # Chat thread with optimistic send, delivery receipts (✓ ✓✓ blue ✓✓), live typing preview, REDACTED deletion, nudge (shake-to-nudge with haptic flash) + local cache
   pricing.tsx              # Subscription plans (modal)
   monetization.tsx         # Revenue center for Executive users (API-backed)
   offline.tsx              # Mesh mode / offline resilience
@@ -73,7 +73,7 @@ constants/
 
 lib/
   auth-context.tsx         # Server-backed auth provider (React Query, sessions, graceful sign-out)
-  websocket.ts             # WebSocket client (connect, disconnect, auto-reconnect, sendTyping, sendMessageRead, onWsEvent/offWsEvent listener system)
+  websocket.ts             # WebSocket client (connect, disconnect, auto-reconnect, sendTyping, sendMessageRead, sendNudge, onWsEvent/offWsEvent listener system)
   query-client.ts          # React Query client with API base URL + default fetcher
   local-cache.ts           # AsyncStorage-based local cache with 14-day TTL
   push-notifications.ts    # Push notification registration, permission handling, notification listeners

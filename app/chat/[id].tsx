@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { View, Text, FlatList, TextInput, StyleSheet, Pressable, Platform, KeyboardAvoidingView, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, FlatList, TextInput, StyleSheet, Pressable, Platform, KeyboardAvoidingView, ActivityIndicator, Alert, Animated } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -9,8 +9,9 @@ import { Avatar } from '@/components/Avatar';
 import { apiRequest, queryClient } from '@/lib/query-client';
 import { useAuth } from '@/lib/auth-context';
 import { cacheGet, cacheSet } from '@/lib/local-cache';
-import { sendTyping, sendMessageRead, onWsEvent, offWsEvent } from '@/lib/websocket';
+import { sendTyping, sendMessageRead, sendNudge, onWsEvent, offWsEvent } from '@/lib/websocket';
 import Colors from '@/constants/colors';
+import { Accelerometer } from 'expo-sensors';
 
 interface Message {
   id: string;
@@ -105,6 +106,10 @@ export default function ChatScreen() {
   const bottomInset = Platform.OS === 'web' ? 34 : insets.bottom;
   const [typingText, setTypingText] = useState('');
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [nudgeSent, setNudgeSent] = useState(false);
+  const [nudgeReceived, setNudgeReceived] = useState(false);
+  const nudgeCooldownRef = useRef(false);
+  const nudgeFlashAnim = useRef(new Animated.Value(0)).current;
 
   const chatCacheKey = `chat_${id}`;
   const [cachedMessages, setCachedMessages] = useState<Message[] | null>(null);
@@ -150,6 +155,61 @@ export default function ChatScreen() {
       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
     };
   }, [id, user?.id]);
+
+  useEffect(() => {
+    if (Platform.OS === 'web' || !id) return;
+
+    let lastShakeTime = 0;
+    Accelerometer.setUpdateInterval(100);
+
+    const subscription = Accelerometer.addListener(({ x, y, z }) => {
+      const totalForce = Math.sqrt(x * x + y * y + z * z);
+      if (totalForce > 2.5) {
+        const now = Date.now();
+        if (now - lastShakeTime > 3000 && !nudgeCooldownRef.current) {
+          lastShakeTime = now;
+          nudgeCooldownRef.current = true;
+          sendNudge(id);
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          setNudgeSent(true);
+          setTimeout(() => setNudgeSent(false), 2000);
+          setTimeout(() => { nudgeCooldownRef.current = false; }, 3000);
+        }
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [id]);
+
+  useEffect(() => {
+    if (!id) return;
+
+    const handleNudge = (data: any) => {
+      if (data.threadId === id) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+        setNudgeReceived(true);
+        Animated.sequence([
+          Animated.timing(nudgeFlashAnim, { toValue: 1, duration: 100, useNativeDriver: false }),
+          Animated.timing(nudgeFlashAnim, { toValue: 0, duration: 100, useNativeDriver: false }),
+          Animated.timing(nudgeFlashAnim, { toValue: 1, duration: 100, useNativeDriver: false }),
+          Animated.timing(nudgeFlashAnim, { toValue: 0, duration: 100, useNativeDriver: false }),
+          Animated.timing(nudgeFlashAnim, { toValue: 1, duration: 100, useNativeDriver: false }),
+          Animated.timing(nudgeFlashAnim, { toValue: 0, duration: 100, useNativeDriver: false }),
+        ]).start();
+        setTimeout(() => setNudgeReceived(false), 2000);
+      }
+    };
+
+    onWsEvent('nudge_received', handleNudge);
+    return () => { offWsEvent('nudge_received', handleNudge); };
+  }, [id, nudgeFlashAnim]);
+
+  const nudgeFlashBg = nudgeFlashAnim.interpolate({
+    inputRange: [0, 0.5, 1],
+    outputRange: ['rgba(0,0,0,0)', '#00FF88', '#FF4444'],
+  });
 
   const { data: messages, isLoading } = useQuery<Message[]>({
     queryKey: ['/api/threads', id, 'messages'],
@@ -257,6 +317,22 @@ export default function ChatScreen() {
       behavior="padding"
       keyboardVerticalOffset={0}
     >
+      <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: nudgeFlashBg, zIndex: 100, opacity: nudgeFlashAnim }]} />
+
+      {nudgeSent && (
+        <View style={[styles.nudgeBanner, { top: topInset + 52 }]}>
+          <Ionicons name="hand-left" size={14} color={Colors.dark.accentGreen} />
+          <Text style={styles.nudgeBannerText}>Nudge sent!</Text>
+        </View>
+      )}
+
+      {nudgeReceived && (
+        <View style={[styles.nudgeBanner, styles.nudgeReceivedBanner, { top: topInset + 52 }]}>
+          <Ionicons name="hand-left" size={14} color="#FF4444" />
+          <Text style={[styles.nudgeBannerText, { color: '#FF4444' }]}>{name || 'User'} nudged you!</Text>
+        </View>
+      )}
+
       <View style={[styles.header, { paddingTop: topInset + 8 }]}>
         <Pressable onPress={() => router.back()} style={styles.backBtn}>
           <Ionicons name="chevron-back" size={24} color={Colors.dark.text} />
@@ -380,4 +456,24 @@ const styles = StyleSheet.create({
   input: { fontSize: 15, fontFamily: 'Inter_400Regular', color: Colors.dark.text, maxHeight: 80 },
   beamButton: { backgroundColor: Colors.dark.accentBlue, borderRadius: 18, paddingHorizontal: 16, height: 36, alignItems: 'center', justifyContent: 'center', marginBottom: 2 },
   beamText: { fontSize: 13, fontFamily: 'Inter_700Bold', color: '#FFFFFF', letterSpacing: 1 },
+  nudgeBanner: {
+    position: 'absolute' as const,
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 6,
+    backgroundColor: 'rgba(0, 255, 136, 0.15)',
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.dark.accentGreen,
+  },
+  nudgeReceivedBanner: {
+    backgroundColor: 'rgba(255, 68, 68, 0.15)',
+    borderBottomColor: '#FF4444',
+  },
+  nudgeBannerText: { fontSize: 13, fontFamily: 'Inter_600SemiBold', color: Colors.dark.accentGreen },
 });

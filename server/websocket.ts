@@ -54,6 +54,28 @@ export function setupWebSocket(server: Server) {
           });
         }
 
+        if (msg.type === "nudge" && userId && msg.threadId) {
+          storage.getThreadParticipantIds(msg.threadId).then((participantIds) => {
+            if (!participantIds.includes(userId)) return;
+            const data = JSON.stringify({
+              type: "nudge_received",
+              threadId: msg.threadId,
+              fromUserId: userId,
+            });
+            for (const pid of participantIds) {
+              if (pid === userId) continue;
+              const userClients = clients.get(pid);
+              if (userClients) {
+                for (const client of userClients) {
+                  if (client.ws.readyState === WebSocket.OPEN) {
+                    client.ws.send(data);
+                  }
+                }
+              }
+            }
+          }).catch(() => {});
+        }
+
         if (msg.type === "message_read" && userId && msg.threadId) {
           storage.markMessagesRead(msg.threadId, userId).then((senderIds) => {
             for (const senderId of senderIds) {

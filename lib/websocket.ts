@@ -46,6 +46,12 @@ export function sendMessageRead(threadId: string) {
   }
 }
 
+export function sendNudge(threadId: string) {
+  if (wsInstance && wsInstance.readyState === WebSocket.OPEN) {
+    wsInstance.send(JSON.stringify({ type: 'nudge', threadId }));
+  }
+}
+
 export function connectWebSocket(userId: string) {
   if (wsInstance && wsInstance.readyState === WebSocket.OPEN) {
     return;

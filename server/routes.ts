@@ -6,8 +6,9 @@ import { pool } from "./db";
 import { storage } from "./storage";
 import { hashPassword, comparePasswords } from "./auth";
 import { registerSchema, loginSchema } from "@shared/schema";
-import { setupWebSocket } from "./websocket";
+import { setupWebSocket, broadcastToUser, isUserOnlineWs } from "./websocket";
 import { seedDatabase } from "./seed";
+import { sendPushToUser } from "./push";
 
 declare module "express-session" {
   interface SessionData {
@@ -180,7 +181,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return res.status(403).json({ message: "Not a participant of this thread" });
     }
     const msgs = await storage.getMessages(req.params.id);
-    await storage.markMessagesRead(req.params.id, userId);
+    const senderIds = await storage.markMessagesRead(req.params.id, userId);
+    for (const senderId of senderIds) {
+      broadcastToUser(senderId, {
+        type: "messages_read",
+        threadId: req.params.id,
+        readByUserId: userId,
+      });
+    }
     return res.json(msgs.reverse());
   });
 
@@ -195,7 +203,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/threads/:id/messages", requireAuth, async (req, res) => {
     const userId = req.session.userId!;
-    const inThread = await storage.isUserInThread(userId, req.params.id);
+    const threadId = req.params.id;
+    const inThread = await storage.isUserInThread(userId, threadId);
     if (!inThread) {
       return res.status(403).json({ message: "Not a participant of this thread" });
     }
@@ -203,14 +212,80 @@ export async function registerRoutes(app: Express): Promise<Server> {
     if (!text) {
       return res.status(400).json({ message: "text required" });
     }
-    const msg = await storage.createMessage(
-      req.params.id,
-      userId,
-      text,
-      isMesh || false,
-    );
-    broadcastToThread(req.params.id, userId, msg);
-    return res.json(msg);
+    const msg = await storage.createMessage(threadId, userId, text, isMesh || false);
+
+    const participantIds = await storage.getThreadParticipantIds(threadId);
+    const recipientIds = participantIds.filter((id) => id !== userId);
+
+    const msgPayload = {
+      ...msg,
+      createdAt: msg.createdAt instanceof Date ? msg.createdAt.toISOString() : msg.createdAt,
+      status: "sent",
+    };
+
+    for (const recipientId of recipientIds) {
+      broadcastToUser(recipientId, {
+        type: "new_message",
+        threadId,
+        message: msgPayload,
+      });
+
+      const sender = await storage.getUser(userId);
+      const senderName = sender?.displayName || sender?.username || "Someone";
+
+      if (isUserOnlineWs(recipientId)) {
+        await storage.markMessageDelivered(msg.id);
+        broadcastToUser(userId, {
+          type: "message_delivered",
+          threadId,
+          messageId: msg.id,
+        });
+        msgPayload.status = "delivered";
+      } else {
+        sendPushToUser(recipientId, senderName, text, {
+          type: "new_message",
+          threadId,
+        }).catch(() => {});
+      }
+
+      const notif = await storage.createNotification(
+        recipientId,
+        "new_message",
+        "New Message",
+        `${senderName}: ${text.length > 50 ? text.slice(0, 50) + '...' : text}`,
+        undefined,
+        userId,
+      );
+      broadcastToUser(recipientId, { type: "new_notification", notification: notif });
+    }
+
+    return res.json(msgPayload);
+  });
+
+  app.delete("/api/threads/:threadId/messages/:messageId", requireAuth, async (req, res) => {
+    const userId = req.session.userId!;
+    const { threadId, messageId } = req.params;
+
+    const inThread = await storage.isUserInThread(userId, threadId);
+    if (!inThread) {
+      return res.status(403).json({ message: "Not a participant of this thread" });
+    }
+
+    const deleted = await storage.deleteMessage(messageId, userId, threadId);
+    if (!deleted) {
+      return res.status(403).json({ message: "Cannot delete this message" });
+    }
+
+    const participantIds = await storage.getThreadParticipantIds(threadId);
+    for (const pid of participantIds) {
+      broadcastToUser(pid, {
+        type: "message_deleted",
+        threadId,
+        messageId,
+      });
+    }
+
+    return res.json({ success: true });
   });
 
   app.get("/api/users/search", requireAuth, async (req, res) => {
@@ -281,19 +356,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/feed/:id/like", requireAuth, async (req, res) => {
     const userId = req.session.userId!;
     await storage.likePost(req.params.id, userId);
-    // TODO: rate limiting for kindness abuse prevention
     await storage.awardKindnessForLike(req.params.id, userId);
     return res.json({ success: true });
   });
 
   app.post("/api/feed/:id/comment", requireAuth, async (req, res) => {
+    const userId = req.session.userId!;
+    const postId = req.params.id;
     const { text } = req.body;
     if (!text) {
       return res.status(400).json({ message: "text required" });
     }
-    await storage.commentOnPost(req.params.id, req.session.userId!, text);
-    const comments = await storage.getPostComments(req.params.id);
-    return res.json({ success: true, comment: comments[0] });
+    await storage.commentOnPost(postId, userId, text);
+    const comments = await storage.getPostComments(postId);
+    const newComment = comments[0];
+
+    const postOwner = await storage.getPostOwner(postId);
+    if (postOwner && postOwner !== userId) {
+      const commenter = await storage.getUser(userId);
+      const notif = await storage.createNotification(
+        postOwner,
+        "new_comment",
+        "New Comment",
+        `${commenter?.displayName || commenter?.username || "Someone"} commented on your post`,
+        postId,
+        userId,
+      );
+      broadcastToUser(postOwner, { type: "new_comment", postId, comment: newComment });
+      broadcastToUser(postOwner, { type: "new_notification", notification: notif });
+      sendPushToUser(
+        postOwner,
+        "New Comment",
+        `${commenter?.displayName || "Someone"} commented on your post`,
+        { type: "new_comment", postId },
+      ).catch(() => {});
+    }
+
+    return res.json({ success: true, comment: newComment });
   });
 
   app.get("/api/feed/:id/comments", requireAuth, async (req, res) => {
@@ -307,8 +406,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (delta !== 10 && delta !== -10) {
         return res.status(400).json({ message: "delta must be 10 or -10" });
       }
-      await storage.awardPostKindness(req.params.id, req.session.userId!, delta);
-      return res.json({ success: true });
+      const userId = req.session.userId!;
+      const postId = req.params.id;
+      await storage.awardPostKindness(postId, userId, delta);
+
+      const postOwner = await storage.getPostOwner(postId);
+      if (postOwner) {
+        const post = await storage.getUser(postOwner);
+        const actor = await storage.getUser(userId);
+        const newScore = post?.kindnessScore || 0;
+
+        broadcastToUser(postOwner, {
+          type: "kindness_awarded",
+          postId,
+          delta,
+          newKindnessScore: newScore,
+          actorUsername: actor?.username || "Someone",
+        });
+
+        const notif = await storage.createNotification(
+          postOwner,
+          "kindness_award",
+          delta > 0 ? "Kindness Received!" : "Kindness Deducted",
+          `${actor?.displayName || "Someone"} ${delta > 0 ? "awarded" : "deducted"} ${Math.abs(delta)} kindness on your post`,
+          postId,
+          userId,
+        );
+        broadcastToUser(postOwner, { type: "new_notification", notification: notif });
+        sendPushToUser(
+          postOwner,
+          delta > 0 ? "Kindness Received! +" + delta : "Kindness Deducted " + delta,
+          `${actor?.displayName || "Someone"} ${delta > 0 ? "awarded" : "deducted"} ${Math.abs(delta)} kindness on your post`,
+          { type: "kindness_award", postId },
+        ).catch(() => {});
+      }
+
+      return res.json({ success: true, delta });
     } catch (err: any) {
       return res.status(400).json({ message: err.message });
     }
@@ -320,8 +453,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (delta !== 10 && delta !== -10) {
         return res.status(400).json({ message: "delta must be 10 or -10" });
       }
-      await storage.awardCommentKindness(req.params.id, req.session.userId!, delta);
-      return res.json({ success: true });
+      const userId = req.session.userId!;
+      const commentId = req.params.id;
+      await storage.awardCommentKindness(commentId, userId, delta);
+
+      const commentInfo = await storage.getCommentOwnerAndPost(commentId);
+      if (commentInfo) {
+        const actor = await storage.getUser(userId);
+        const notif = await storage.createNotification(
+          commentInfo.userId,
+          "kindness_award",
+          delta > 0 ? "Kindness Received!" : "Kindness Deducted",
+          `${actor?.displayName || "Someone"} ${delta > 0 ? "awarded" : "deducted"} ${Math.abs(delta)} kindness on your comment`,
+          commentInfo.postId,
+          userId,
+        );
+        broadcastToUser(commentInfo.userId, { type: "new_notification", notification: notif });
+        sendPushToUser(
+          commentInfo.userId,
+          delta > 0 ? "Kindness Received!" : "Kindness Deducted",
+          `${actor?.displayName || "Someone"} ${delta > 0 ? "awarded" : "deducted"} ${Math.abs(delta)} kindness on your comment`,
+          { type: "kindness_award", postId: commentInfo.postId },
+        ).catch(() => {});
+      }
+
+      return res.json({ success: true, delta });
     } catch (err: any) {
       return res.status(400).json({ message: err.message });
     }
@@ -330,6 +486,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/kindness/history", requireAuth, async (req, res) => {
     const history = await storage.getKindnessHistory(req.session.userId!);
     return res.json(history);
+  });
+
+  app.get("/api/notifications", requireAuth, async (req, res) => {
+    const notifs = await storage.getNotifications(req.session.userId!);
+    return res.json(notifs);
+  });
+
+  app.post("/api/notifications/:id/read", requireAuth, async (req, res) => {
+    await storage.markNotificationRead(req.params.id, req.session.userId!);
+    return res.json({ success: true });
+  });
+
+  app.get("/api/notifications/unread-count", requireAuth, async (req, res) => {
+    const count = await storage.getUnreadNotificationCount(req.session.userId!);
+    return res.json({ count });
+  });
+
+  app.post("/api/push-token", requireAuth, async (req, res) => {
+    const { token } = req.body;
+    await storage.updatePushToken(req.session.userId!, token || null);
+    return res.json({ success: true });
   });
 
   app.get("/api/nearby", requireAuth, async (req, res) => {
@@ -412,14 +589,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   const httpServer = createServer(app);
-
-  const broadcast = setupWebSocket(httpServer);
-
-  async function broadcastToThread(threadId: string, senderId: string, message: any) {
-    const participantIds = await storage.getThreadParticipantIds(threadId);
-    const recipientIds = participantIds.filter((id) => id !== senderId);
-    broadcast(threadId, senderId, message, recipientIds);
-  }
+  setupWebSocket(httpServer);
 
   return httpServer;
 }

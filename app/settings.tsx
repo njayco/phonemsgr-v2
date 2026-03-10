@@ -7,6 +7,7 @@ import * as Haptics from 'expo-haptics';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useAuth } from '@/lib/auth-context';
 import { apiRequest, queryClient } from '@/lib/query-client';
+import { registerForPushNotifications, unregisterPushNotifications } from '@/lib/push-notifications';
 import Colors from '@/constants/colors';
 
 export default function SettingsScreen() {
@@ -56,6 +57,14 @@ export default function SettingsScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     const newValue = !settings[key];
     setSettings(prev => ({ ...prev, [key]: newValue }));
+
+    if (key === 'notifications') {
+      if (newValue) {
+        registerForPushNotifications();
+      } else {
+        unregisterPushNotifications();
+      }
+    }
 
     const serverKey = key === 'notifications' ? 'notificationsEnabled' : key;
     updateSettingsMutation.mutate({ [serverKey]: newValue });

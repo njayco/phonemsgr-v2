@@ -1,14 +1,15 @@
 # Phone Msgr 2026 - Kindness-Based Social Messenger
 
 ## Overview
-Phone Msgr is a kindness-based social messenger mobile app built with React Native / Expo. It enables local social connections, secure messaging, and community engagement with a premium futuristic dark UI aesthetic. Phase 4 adds expanded kindness economy (likes/comments/posts awards), comment viewing/posting, remove buddy, presence fix, sign-out fix, and 14-day local caching.
+Phone Msgr is a kindness-based social messenger mobile app built with React Native / Expo. It enables local social connections, secure messaging, and community engagement with a premium futuristic dark UI aesthetic. Phase 5 adds instant messaging with optimistic send, WhatsApp-style delivery receipts, live keystroke typing preview, REDACTED message deletion, real-time kindness/comment updates via WebSocket, in-app notifications, and push notifications via expo-notifications.
 
 ## Tech Stack
 - **Frontend**: React Native, Expo SDK 54, TypeScript, Expo Router (file-based routing)
 - **Backend**: Express.js (port 5000) with TypeScript, serving API + landing page
 - **Database**: PostgreSQL (Replit built-in) with Drizzle ORM
 - **Auth**: Express sessions with connect-pg-simple, scrypt password hashing
-- **Realtime**: WebSocket (ws package) for live message delivery and presence
+- **Realtime**: WebSocket (ws package) for live message delivery, typing preview, receipts, kindness/comment events, notifications
+- **Push Notifications**: expo-notifications (native), Expo Push API (server), in-app fallback (web)
 - **State**: React Query for server state, React Context for auth
 - **Local Cache**: AsyncStorage with 14-day TTL for messages, threads, and feed posts
 - **Uploads**: Multer for file uploads (avatars, media, attachments)
@@ -19,15 +20,16 @@ Phone Msgr is a kindness-based social messenger mobile app built with React Nati
 ## Project Structure
 ```
 shared/
-  schema.ts                # Drizzle ORM schema (16 tables) + Zod validation schemas
+  schema.ts                # Drizzle ORM schema (17 tables) + Zod validation schemas
 
 server/
   index.ts                 # Express server entry with session middleware + WebSocket setup
-  routes.ts                # All API routes (auth, threads, messages, feed, settings, nearby, buddies, search, kindness)
-  storage.ts               # DatabaseStorage class (IStorage interface, all CRUD methods)
+  routes.ts                # All API routes (auth, threads, messages, feed, settings, nearby, buddies, search, kindness, notifications, push-token)
+  storage.ts               # DatabaseStorage class (IStorage interface, all CRUD methods incl. notifications, push tokens, message status/deletion)
   db.ts                    # Drizzle database connection pool
   auth.ts                  # Password hashing (scrypt) + session auth helpers
-  websocket.ts             # WebSocket server (user tracking, message broadcast, online/offline presence, lastActiveAt)
+  websocket.ts             # WebSocket server (user tracking, typing, receipts, message broadcast, kindness/comment events, online/offline presence)
+  push.ts                  # Push notification service (Expo Push API)
   uploads.ts               # Multer file upload middleware (avatar, media, attachment)
   seed.ts                  # Demo data seeding (6 users, threads, messages, posts, comments, buddy connections, presence)
   templates/landing-page.html
@@ -42,17 +44,17 @@ app/
   nearby-list.tsx          # Nearby people list with message/add buddy/remove buddy actions
   +not-found.tsx           # 404 screen
   (tabs)/
-    _layout.tsx            # Tab navigation + WebSocket connect/disconnect
-    index.tsx              # Home dashboard (kindness score, plan, recent activity)
+    _layout.tsx            # Tab navigation + WebSocket connect/disconnect + notification badge on Home tab
+    index.tsx              # Home dashboard (kindness score, plan, recent activity, notification bell + notifications list)
     live-field.tsx         # GPS proximity radar (buddy vs nearby toggle, real location)
-    feed.tsx               # Social feed with buddy/nearby filtering, comments, kindness awards
+    feed.tsx               # Social feed with buddy/nearby filtering, comments, kindness awards, real-time WS updates
     messages.tsx           # Chat thread list with compose button + local cache
     profile.tsx            # User profile with kindness score + badges + sign out
-  chat/[id].tsx            # Chat thread with BEAM send (real messages API) + local cache
+  chat/[id].tsx            # Chat thread with optimistic send, delivery receipts (✓ ✓✓ blue ✓✓), live typing preview, REDACTED deletion + local cache
   pricing.tsx              # Subscription plans (modal)
   monetization.tsx         # Revenue center for Executive users (API-backed)
   offline.tsx              # Mesh mode / offline resilience
-  settings.tsx             # Privacy, notifications, account settings (API-backed)
+  settings.tsx             # Privacy, notifications (push toggle), account settings (API-backed)
 
 components/
   Avatar.tsx               # Initial-based avatar with optional glow
@@ -67,17 +69,20 @@ constants/
 
 lib/
   auth-context.tsx         # Server-backed auth provider (React Query, sessions, graceful sign-out)
-  websocket.ts             # WebSocket client (connect, disconnect, auto-reconnect)
+  websocket.ts             # WebSocket client (connect, disconnect, auto-reconnect, sendTyping, sendMessageRead, onWsEvent/offWsEvent listener system)
   query-client.ts          # React Query client with API base URL + default fetcher
   local-cache.ts           # AsyncStorage-based local cache with 14-day TTL
+  push-notifications.ts    # Push notification registration, permission handling, notification listeners
   mock-data.ts             # Legacy demo data (reference only, not imported by screens)
 ```
 
 ## Database Schema (PostgreSQL + Drizzle ORM)
 Key tables in `shared/schema.ts`:
-- `users` — profiles with plan tier, kindness score, reputation, isOnline, lastSeenAt, lastActiveAt
+- `users` — profiles with plan tier, kindness score, reputation, isOnline, lastSeenAt, lastActiveAt, pushToken
 - `user_interests`, `user_badges` — user metadata
-- `message_threads`, `thread_participants`, `messages` — messaging
+- `message_threads`, `thread_participants` — messaging threads
+- `messages` — messages with `status` (sent/delivered/read), `isDeleted`, `deliveredAt`, `readAt`, `deletedAt`
+- `notifications` — in-app notifications (type: kindness_award, new_comment, new_message) with isRead flag
 - `feed_posts` — social feed with `audience` column (everyone/buddy/nearby)
 - `feed_comments` — comments with kindnessScore
 - `feed_reactions` — likes with unique constraint per user per post
@@ -94,9 +99,12 @@ All data routes require session authentication (`req.session.userId`).
 
 **Auth**: POST /api/auth/register, /api/auth/login, /api/auth/logout, GET /api/auth/me (forces isOnline=true)
 **Threads**: GET /api/threads, POST /api/threads, GET /api/threads/:id/messages, POST /api/threads/:id/messages
+**Message Deletion**: DELETE /api/threads/:threadId/messages/:messageId (sender only; marks isDeleted, broadcasts via WS)
 **Feed**: GET /api/feed?type=buddy|nearby, POST /api/feed (with audience), POST /api/feed/:id/like (+5 kindness), POST /api/feed/:id/comment
 **Comments**: GET /api/feed/:id/comments
 **Kindness Awards**: POST /api/feed/:id/kindness (±10 on post), POST /api/feed/comments/:id/kindness (±10 on comment, post owner only)
+**Notifications**: GET /api/notifications, POST /api/notifications/:id/read, GET /api/notifications/unread-count
+**Push Token**: POST /api/push-token (stores/clears Expo push token)
 **Search**: GET /api/users/search?q= (searches displayName, username, phone)
 **Buddies**: GET /api/buddies, POST /api/buddies/:id, DELETE /api/buddies/:id
 **Kindness**: GET /api/kindness/history
@@ -105,10 +113,37 @@ All data routes require session authentication (`req.session.userId`).
 **Monetization**: GET /api/monetization, PATCH /api/monetization
 **Upload**: POST /api/upload/avatar, /api/upload/media, /api/upload/attachment
 
+## WebSocket Events
+Server-to-client and client-to-server event types:
+- `auth` (C→S) — authenticate with userId
+- `typing` (C→S, S→C) — live keystroke preview: `{ threadId, userId, text }`
+- `message_read` (C→S) — mark messages as read in thread
+- `new_message` (S→C) — new message received: `{ threadId, message }`
+- `message_delivered` (S→C) — delivery confirmation: `{ threadId, messageId }`
+- `messages_read` (S→C) — read receipt: `{ threadId, readByUserId }`
+- `message_deleted` (S→C) — message deletion: `{ threadId, messageId }`
+- `kindness_awarded` (S→C) — kindness update: `{ postId, delta, newKindnessScore }`
+- `new_comment` (S→C) — new comment on post: `{ postId, comment }`
+- `new_notification` (S→C) — in-app notification: `{ notification }`
+
+## Messaging Features
+- **Optimistic Send**: Messages appear instantly in chat with temp ID; replaced with server response on success
+- **Delivery Receipts**: Single gray check (sent), double gray checks (delivered), blue double checks (read)
+- **Live Typing Preview**: Other user sees characters typed/backspaced in real-time ghost bubble (throttled 100ms)
+- **Message Deletion**: Long-press to delete own messages; shows "REDACTED" with classified stamp
+- **REDACTED Style**: Dark red/amber tint, lock icon, "CLASSIFIED" timestamp
+
+## Push Notifications
+- **Native**: expo-notifications for iOS/Android via Expo Go
+- **Web**: In-app notifications only (no web push)
+- **Toggle**: Push notification permission toggle starts OFF (Expo guidelines)
+- **Backend**: Expo Push API via server/push.ts; sends for new messages, kindness awards, new comments
+- **Token Management**: POST /api/push-token stores/clears token per user
+
 ## Kindness Economy
 - **Like a post**: Liker earns +5 kindness (one-time per post, not on own posts)
-- **Award post kindness**: Any user can +10 or -10 on a post (one-time per user per post, not on own posts); updates post's kindnessEarned and post owner's kindnessScore
-- **Award comment kindness**: Only post owner can +10 or -10 on comments on their post (one-time per comment); updates comment's kindnessScore and commenter's kindnessScore
+- **Award post kindness**: Any user can +10 or -10 on a post (one-time per user per post, not on own posts); updates post's kindnessEarned and post owner's kindnessScore; triggers WS event + notification + push
+- **Award comment kindness**: Only post owner can +10 or -10 on comments on their post (one-time per comment); updates comment's kindnessScore and commenter's kindnessScore; triggers notification + push
 - Duplicate prevention via `kindness_actions` unique constraint on (actorUserId, targetType, targetId)
 
 ## Local Cache (14-day TTL)
@@ -150,10 +185,10 @@ All data routes require session authentication (`req.session.userId`).
 - Feed audience values: "everyone", "buddy", "nearby" (default "everyone")
 - Nearby queries accept radius in meters (default 400m)
 - GPS: uses expo-location on native, web geolocation API on web, falls back to NYC coords
+- Message text replaced with "REDACTED" for deleted messages in both getMessages and getThreadsForUser
 
 ## TODO
 - Anti-abuse/rate limiting on kindness actions
 - Content moderation review system
-- Push notifications for messages and kindness awards
 - Analytics around kindness actions
 - More advanced presence handling (heartbeat, timeout)

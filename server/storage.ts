@@ -5,6 +5,7 @@ import {
   type FeedPost,
   type FeedComment,
   type KindnessEntry,
+  type Notification,
   type UserSettings,
   type MonetizationSettings,
   users,
@@ -23,6 +24,7 @@ import {
   events,
   monetizationSettings,
   userSettings,
+  notifications,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, sql, ne, inArray, or, ilike } from "drizzle-orm";
@@ -40,9 +42,9 @@ export interface IStorage {
   getThreadsForUser(userId: string): Promise<any[]>;
   getOrCreateThread(userId: string, participantId: string): Promise<string>;
 
-  getMessages(threadId: string, limit?: number): Promise<Message[]>;
+  getMessages(threadId: string, limit?: number): Promise<any[]>;
   createMessage(threadId: string, senderId: string, text: string, isMesh?: boolean): Promise<Message>;
-  markMessagesRead(threadId: string, userId: string): Promise<void>;
+  markMessagesRead(threadId: string, userId: string): Promise<string[]>;
 
   getFeedPosts(limit?: number): Promise<any[]>;
   createFeedPost(userId: string, content: string, mediaType: string, mediaUrl?: string, audience?: string): Promise<FeedPost>;
@@ -80,6 +82,16 @@ export interface IStorage {
   awardCommentKindness(commentId: string, actorUserId: string, delta: number): Promise<void>;
   getPostOwner(postId: string): Promise<string | null>;
   getCommentOwnerAndPost(commentId: string): Promise<{ userId: string; postId: string } | null>;
+
+  markMessageDelivered(messageId: string): Promise<void>;
+  deleteMessage(messageId: string, userId: string): Promise<boolean>;
+
+  createNotification(userId: string, type: string, title: string, body: string, relatedPostId?: string, relatedUserId?: string): Promise<Notification>;
+  getNotifications(userId: string, limit?: number): Promise<Notification[]>;
+  markNotificationRead(notificationId: string, userId: string): Promise<void>;
+  getUnreadNotificationCount(userId: string): Promise<number>;
+  updatePushToken(userId: string, token: string | null): Promise<void>;
+  getPushToken(userId: string): Promise<string | null>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -178,7 +190,7 @@ export class DatabaseStorage implements IStorage {
         participantId: other?.users?.id || "",
         participantName: other?.users?.displayName || "Unknown",
         participantAvatar: other?.users?.avatarUrl || "",
-        lastMessage: lastMsg?.text || "",
+        lastMessage: lastMsg?.isDeleted ? "REDACTED" : (lastMsg?.text || ""),
         lastMessageTime: lastMsg?.createdAt?.getTime() || thread.createdAt.getTime(),
         unreadCount: myParticipant?.unreadCount || 0,
         isOnline: other?.users?.isOnline || false,
@@ -222,13 +234,22 @@ export class DatabaseStorage implements IStorage {
     return thread.id;
   }
 
-  async getMessages(threadId: string, limit = 50): Promise<Message[]> {
-    return db
+  async getMessages(threadId: string, limit = 50): Promise<any[]> {
+    const rows = await db
       .select()
       .from(messages)
       .where(eq(messages.threadId, threadId))
       .orderBy(desc(messages.createdAt))
       .limit(limit);
+
+    return rows.map((m) => ({
+      ...m,
+      text: m.isDeleted ? "REDACTED" : m.text,
+      createdAt: m.createdAt.toISOString(),
+      deliveredAt: m.deliveredAt?.toISOString() || null,
+      readAt: m.readAt?.toISOString() || null,
+      deletedAt: m.deletedAt?.toISOString() || null,
+    }));
   }
 
   async createMessage(
@@ -265,7 +286,7 @@ export class DatabaseStorage implements IStorage {
     return msg;
   }
 
-  async markMessagesRead(threadId: string, userId: string): Promise<void> {
+  async markMessagesRead(threadId: string, userId: string): Promise<string[]> {
     await db
       .update(threadParticipants)
       .set({ unreadCount: 0, lastReadAt: new Date() })
@@ -275,6 +296,28 @@ export class DatabaseStorage implements IStorage {
           eq(threadParticipants.userId, userId),
         ),
       );
+
+    const unreadMsgs = await db
+      .select({ id: messages.id, senderId: messages.senderId })
+      .from(messages)
+      .where(
+        and(
+          eq(messages.threadId, threadId),
+          ne(messages.senderId, userId),
+          ne(messages.status, "read"),
+        ),
+      );
+
+    if (unreadMsgs.length > 0) {
+      const msgIds = unreadMsgs.map((m) => m.id);
+      await db
+        .update(messages)
+        .set({ status: "read", readAt: new Date() })
+        .where(inArray(messages.id, msgIds));
+    }
+
+    const senderIds = [...new Set(unreadMsgs.map((m) => m.senderId))];
+    return senderIds;
   }
 
   async getFeedPosts(limit = 20): Promise<any[]> {
@@ -815,6 +858,101 @@ export class DatabaseStorage implements IStorage {
       targetType: "comment",
       targetId: commentId,
     });
+  }
+
+  async markMessageDelivered(messageId: string): Promise<void> {
+    await db
+      .update(messages)
+      .set({ status: "delivered", deliveredAt: new Date() })
+      .where(
+        and(
+          eq(messages.id, messageId),
+          eq(messages.status, "sent"),
+        ),
+      );
+  }
+
+  async deleteMessage(messageId: string, userId: string, threadId?: string): Promise<boolean> {
+    const conditions = [eq(messages.id, messageId)];
+    if (threadId) conditions.push(eq(messages.threadId, threadId));
+
+    const [msg] = await db
+      .select({ senderId: messages.senderId, threadId: messages.threadId })
+      .from(messages)
+      .where(and(...conditions));
+
+    if (!msg || msg.senderId !== userId) return false;
+
+    await db
+      .update(messages)
+      .set({ isDeleted: true, deletedAt: new Date() })
+      .where(eq(messages.id, messageId));
+
+    return true;
+  }
+
+  async createNotification(
+    userId: string,
+    type: string,
+    title: string,
+    body: string,
+    relatedPostId?: string,
+    relatedUserId?: string,
+  ): Promise<Notification> {
+    const [notif] = await db
+      .insert(notifications)
+      .values({ userId, type, title, body, relatedPostId, relatedUserId })
+      .returning();
+    return notif;
+  }
+
+  async getNotifications(userId: string, limit = 50): Promise<Notification[]> {
+    return db
+      .select()
+      .from(notifications)
+      .where(eq(notifications.userId, userId))
+      .orderBy(desc(notifications.createdAt))
+      .limit(limit);
+  }
+
+  async markNotificationRead(notificationId: string, userId: string): Promise<void> {
+    await db
+      .update(notifications)
+      .set({ isRead: true })
+      .where(
+        and(
+          eq(notifications.id, notificationId),
+          eq(notifications.userId, userId),
+        ),
+      );
+  }
+
+  async getUnreadNotificationCount(userId: string): Promise<number> {
+    const [result] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(notifications)
+      .where(
+        and(
+          eq(notifications.userId, userId),
+          eq(notifications.isRead, false),
+        ),
+      );
+    return result?.count || 0;
+  }
+
+  async updatePushToken(userId: string, token: string | null): Promise<void> {
+    await db
+      .update(users)
+      .set({ pushToken: token })
+      .where(eq(users.id, userId));
+  }
+
+  async getPushToken(userId: string): Promise<string | null> {
+    const [user] = await db
+      .select({ pushToken: users.pushToken })
+      .from(users)
+      .where(eq(users.id, userId));
+    return user?.pushToken || null;
   }
 }
 

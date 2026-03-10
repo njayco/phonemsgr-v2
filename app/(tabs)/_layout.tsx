@@ -3,12 +3,14 @@ import { isLiquidGlassAvailable } from "expo-glass-effect";
 import { Tabs, router } from "expo-router";
 import { NativeTabs, Icon, Label } from "expo-router/unstable-native-tabs";
 import { BlurView } from "expo-blur";
-import { Platform, StyleSheet, View } from "react-native";
+import { Platform, StyleSheet, View, Text } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import React from "react";
+import { useQuery } from "@tanstack/react-query";
 import Colors from "@/constants/colors";
 import { useAuth } from "@/lib/auth-context";
 import { connectWebSocket, disconnectWebSocket } from "@/lib/websocket";
+import { setupNotificationListeners } from "@/lib/push-notifications";
 
 function NativeTabLayout() {
   return (
@@ -36,6 +38,45 @@ function NativeTabLayout() {
     </NativeTabs>
   );
 }
+
+function HomeTabIcon({ color, size }: { color: string; size: number }) {
+  const { data: unreadData } = useQuery<{ count: number }>({
+    queryKey: ["/api/notifications/unread-count"],
+    refetchInterval: 15000,
+  });
+  const count = unreadData?.count || 0;
+
+  return (
+    <View>
+      <Ionicons name="home" size={size} color={color} />
+      {count > 0 && (
+        <View style={tabStyles.badge}>
+          <Text style={tabStyles.badgeText}>{count > 9 ? "9+" : count}</Text>
+        </View>
+      )}
+    </View>
+  );
+}
+
+const tabStyles = StyleSheet.create({
+  badge: {
+    position: "absolute",
+    top: -4,
+    right: -8,
+    backgroundColor: "#FF3B30",
+    borderRadius: 8,
+    minWidth: 16,
+    height: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 3,
+  },
+  badgeText: {
+    fontSize: 9,
+    fontFamily: "Inter_700Bold",
+    color: "#FFFFFF",
+  },
+});
 
 function ClassicTabLayout() {
   const isWeb = Platform.OS === "web";
@@ -67,7 +108,7 @@ function ClassicTabLayout() {
         name="index"
         options={{
           title: "Home",
-          tabBarIcon: ({ color, size }) => <Ionicons name="home" size={size} color={color} />,
+          tabBarIcon: ({ color, size }) => <HomeTabIcon color={color} size={size} />,
         }}
       />
       <Tabs.Screen
@@ -122,8 +163,20 @@ export default function TabLayout() {
     if (isAuthenticated && user?.id) {
       connectWebSocket(user.id);
       updateUser({ isOnline: true });
+
+      const cleanupNotifs = setupNotificationListeners((data: any) => {
+        if (data?.type === 'new_message' && data?.threadId) {
+          router.push('/(tabs)/messages');
+        } else if (data?.type === 'new_comment' || data?.type === 'kindness_award') {
+          router.push('/(tabs)/feed');
+        }
+      });
+
       return () => {
         disconnectWebSocket();
+        if (cleanupNotifs && typeof cleanupNotifs === 'object' && 'then' in cleanupNotifs) {
+          (cleanupNotifs as Promise<(() => void) | undefined>).then(fn => fn?.());
+        }
       };
     }
   }, [isAuthenticated, user?.id, updateUser]);

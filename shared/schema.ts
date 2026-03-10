@@ -35,6 +35,7 @@ export const users = pgTable(
     messagesCount: integer("messages_count").notNull().default(0),
     eventsCount: integer("events_count").notNull().default(0),
     createdAt: timestamp("created_at").defaultNow().notNull(),
+    pushToken: text("push_token"),
     lastSeenAt: timestamp("last_seen_at"),
     lastActiveAt: timestamp("last_active_at"),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -108,7 +109,12 @@ export const messages = pgTable("messages", {
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),
   text: text("text").notNull(),
+  status: varchar("status", { length: 20 }).notNull().default("sent"),
   isDeliveredViaMesh: boolean("is_delivered_via_mesh").notNull().default(false),
+  isDeleted: boolean("is_deleted").notNull().default(false),
+  deliveredAt: timestamp("delivered_at"),
+  readAt: timestamp("read_at"),
+  deletedAt: timestamp("deleted_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -269,6 +275,25 @@ export const userSettings = pgTable("user_settings", {
   notificationsEnabled: boolean("notifications_enabled").notNull().default(true),
 });
 
+export const notifications = pgTable("notifications", {
+  id: varchar("id", { length: 36 })
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  userId: varchar("user_id", { length: 36 })
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  type: varchar("type", { length: 50 }).notNull(),
+  title: text("title").notNull(),
+  body: text("body").notNull(),
+  relatedPostId: varchar("related_post_id", { length: 36 }),
+  relatedUserId: varchar("related_user_id", { length: 36 }),
+  isRead: boolean("is_read").notNull().default(false),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("notifications_user_idx").on(table.userId),
+  index("notifications_user_unread_idx").on(table.userId, table.isRead),
+]);
+
 export const insertUserSchema = createInsertSchema(users).pick({
   username: true,
   password: true,
@@ -296,5 +321,6 @@ export type FeedPost = typeof feedPosts.$inferSelect;
 export type FeedComment = typeof feedComments.$inferSelect;
 export type KindnessEntry = typeof kindnessLedger.$inferSelect;
 export type KindnessAction = typeof kindnessActions.$inferSelect;
+export type Notification = typeof notifications.$inferSelect;
 export type UserSettings = typeof userSettings.$inferSelect;
 export type MonetizationSettings = typeof monetizationSettings.$inferSelect;

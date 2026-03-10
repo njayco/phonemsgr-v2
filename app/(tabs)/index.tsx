@@ -1,12 +1,26 @@
-import { View, Text, ScrollView, StyleSheet, Pressable, Platform, ActivityIndicator } from 'react-native';
+import { useState, useEffect } from 'react';
+import { View, Text, ScrollView, StyleSheet, Pressable, Platform, FlatList } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation } from '@tanstack/react-query';
 import { GlassCard } from '@/components/GlassCard';
 import { useAuth } from '@/lib/auth-context';
+import { apiRequest, queryClient } from '@/lib/query-client';
 import Colors from '@/constants/colors';
+
+interface NotificationItem {
+  id: string;
+  userId: string;
+  type: string;
+  title: string;
+  body: string;
+  relatedPostId?: string;
+  relatedUserId?: string;
+  isRead: boolean;
+  createdAt: string;
+}
 
 function timeAgo(ts: number | string): string {
   const time = typeof ts === 'string' ? new Date(ts).getTime() : ts;
@@ -17,10 +31,35 @@ function timeAgo(ts: number | string): string {
   return `${Math.floor(diff / 604800000)}w ago`;
 }
 
+function notifIcon(type: string): { name: string; color: string } {
+  if (type === 'kindness_award') return { name: 'heart', color: Colors.dark.kindnessGreen };
+  if (type === 'new_comment') return { name: 'chatbubble', color: Colors.dark.accentBlue };
+  if (type === 'new_message') return { name: 'mail', color: Colors.dark.accentCyan };
+  return { name: 'notifications', color: Colors.dark.textSecondary };
+}
+
+function NotificationRow({ notif, onPress }: { notif: NotificationItem; onPress: () => void }) {
+  const icon = notifIcon(notif.type);
+  return (
+    <Pressable style={[styles.notifRow, !notif.isRead && styles.notifUnread]} onPress={onPress}>
+      <View style={[styles.notifIcon, { backgroundColor: icon.color + '20' }]}>
+        <Ionicons name={icon.name as any} size={16} color={icon.color} />
+      </View>
+      <View style={styles.notifContent}>
+        <Text style={styles.notifTitle} numberOfLines={1}>{notif.title}</Text>
+        <Text style={styles.notifBody} numberOfLines={2}>{notif.body}</Text>
+      </View>
+      <Text style={styles.notifTime}>{timeAgo(notif.createdAt)}</Text>
+      {!notif.isRead && <View style={styles.notifDot} />}
+    </Pressable>
+  );
+}
+
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
+  const [showNotifs, setShowNotifs] = useState(false);
 
   const { data: activity } = useQuery<any[]>({
     queryKey: ['/api/kindness/history'],
@@ -32,13 +71,80 @@ export default function HomeScreen() {
     enabled: !!user,
   });
 
+  const { data: unreadData } = useQuery<{ count: number }>({
+    queryKey: ['/api/notifications/unread-count'],
+    enabled: !!user,
+    refetchInterval: 15000,
+  });
+
+  const { data: notifications } = useQuery<NotificationItem[]>({
+    queryKey: ['/api/notifications'],
+    enabled: !!user && showNotifs,
+  });
+
+  const markReadMutation = useMutation({
+    mutationFn: async (notifId: string) => {
+      await apiRequest('POST', `/api/notifications/${notifId}/read`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/notifications'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/notifications/unread-count'] });
+    },
+  });
+
+  const handleNotifPress = (notif: NotificationItem) => {
+    if (!notif.isRead) {
+      markReadMutation.mutate(notif.id);
+    }
+    if (notif.type === 'new_comment' || notif.type === 'kindness_award') {
+      setShowNotifs(false);
+      router.push('/(tabs)/feed');
+    }
+    if (notif.type === 'new_message') {
+      setShowNotifs(false);
+      router.push('/(tabs)/messages');
+    }
+  };
+
   if (!user) return null;
 
+  const unreadCount = unreadData?.count || 0;
   const planLabel = user.plan === 'executive' ? 'Executive' : user.plan === 'associate' ? 'Associate' : 'Temp';
   const planColor = user.plan === 'executive' ? Colors.dark.accentGreen : user.plan === 'associate' ? Colors.dark.accentBlue : Colors.dark.textSecondary;
 
   const recentActivity = activity?.slice(0, 4) || [];
   const nearbyCount = nearby?.length || 0;
+  const notifList = notifications || [];
+
+  if (showNotifs) {
+    return (
+      <View style={styles.container}>
+        <View style={[styles.headerRow, { paddingTop: topInset + 16, paddingHorizontal: 16 }]}>
+          <Pressable onPress={() => setShowNotifs(false)} style={styles.backBtn}>
+            <Ionicons name="chevron-back" size={24} color={Colors.dark.text} />
+          </Pressable>
+          <Text style={styles.notifHeaderTitle}>Notifications</Text>
+          <View style={{ width: 40 }} />
+        </View>
+        <FlatList
+          data={notifList}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => (
+            <NotificationRow notif={item} onPress={() => handleNotifPress(item)} />
+          )}
+          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 100 }}
+          showsVerticalScrollIndicator={false}
+          scrollEnabled={notifList.length > 0}
+          ListEmptyComponent={
+            <View style={styles.emptyNotifs}>
+              <Ionicons name="notifications-off-outline" size={40} color={Colors.dark.textMuted} />
+              <Text style={styles.emptyText}>No notifications yet</Text>
+            </View>
+          }
+        />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -51,9 +157,19 @@ export default function HomeScreen() {
             <Text style={styles.greeting}>Phone Msgr 2026</Text>
             <Text style={styles.welcomeText}>Welcome, {user.displayName || user.username}</Text>
           </View>
-          <Pressable onPress={() => router.push('/settings')} style={styles.settingsButton}>
-            <Ionicons name="settings-outline" size={22} color={Colors.dark.textSecondary} />
-          </Pressable>
+          <View style={styles.headerActions}>
+            <Pressable onPress={() => setShowNotifs(true)} style={styles.bellBtn} testID="notification-bell">
+              <Ionicons name="notifications" size={22} color={Colors.dark.textSecondary} />
+              {unreadCount > 0 && (
+                <View style={styles.bellBadge}>
+                  <Text style={styles.bellBadgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
+                </View>
+              )}
+            </Pressable>
+            <Pressable onPress={() => router.push('/settings')} style={styles.settingsButton}>
+              <Ionicons name="settings-outline" size={22} color={Colors.dark.textSecondary} />
+            </Pressable>
+          </View>
         </View>
 
         <GlassCard style={styles.statusCard} borderColor={planColor}>
@@ -160,6 +276,10 @@ const styles = StyleSheet.create({
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
   greeting: { fontSize: 12, fontFamily: 'Inter_500Medium', color: Colors.dark.textMuted, letterSpacing: 1 },
   welcomeText: { fontSize: 22, fontFamily: 'Inter_700Bold', color: Colors.dark.text, marginTop: 4 },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  bellBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  bellBadge: { position: 'absolute', top: 4, right: 4, backgroundColor: '#FF3B30', borderRadius: 9, minWidth: 18, height: 18, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
+  bellBadgeText: { fontSize: 10, fontFamily: 'Inter_700Bold', color: '#FFFFFF' },
   settingsButton: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   statusCard: { paddingVertical: 14 },
   statusRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
@@ -192,4 +312,15 @@ const styles = StyleSheet.create({
   revenueRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   revenueLabel: { fontSize: 13, fontFamily: 'Inter_400Regular', color: Colors.dark.textSecondary },
   revenueValue: { fontSize: 24, fontFamily: 'Inter_700Bold', color: Colors.dark.accentCyan, marginTop: 2 },
+  backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  notifHeaderTitle: { flex: 1, fontSize: 18, fontFamily: 'Inter_600SemiBold', color: Colors.dark.text, textAlign: 'center' },
+  notifRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: Colors.dark.separator },
+  notifUnread: { backgroundColor: 'rgba(0,170,255,0.04)' },
+  notifIcon: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  notifContent: { flex: 1, gap: 2 },
+  notifTitle: { fontSize: 13, fontFamily: 'Inter_600SemiBold', color: Colors.dark.text },
+  notifBody: { fontSize: 12, fontFamily: 'Inter_400Regular', color: Colors.dark.textSecondary, lineHeight: 16 },
+  notifTime: { fontSize: 10, fontFamily: 'Inter_400Regular', color: Colors.dark.textMuted },
+  notifDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: Colors.dark.accentBlue },
+  emptyNotifs: { alignItems: 'center', justifyContent: 'center', paddingTop: 80, gap: 12 },
 });

@@ -38,6 +38,8 @@ export const users = pgTable(
     pushToken: text("push_token"),
     lastSeenAt: timestamp("last_seen_at"),
     lastActiveAt: timestamp("last_active_at"),
+    occupation: text("occupation").default(""),
+    company: text("company").default(""),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (table) => [
@@ -291,6 +293,21 @@ export const notifications = pgTable("notifications", {
   index("notifications_user_unread_idx").on(table.userId, table.isRead),
 ]);
 
+export const userEducation = pgTable("user_education", {
+  id: varchar("id", { length: 36 })
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  userId: varchar("user_id", { length: 36 })
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  type: text("type").notNull().default("college"),
+  schoolName: text("school_name").notNull().default(""),
+  degree: text("degree").default(""),
+  major: text("major").default(""),
+  graduationYear: integer("graduation_year"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 export const insertUserSchema = createInsertSchema(users).pick({
   username: true,
   password: true,
@@ -321,3 +338,4 @@ export type KindnessAction = typeof kindnessActions.$inferSelect;
 export type Notification = typeof notifications.$inferSelect;
 export type UserSettings = typeof userSettings.$inferSelect;
 export type MonetizationSettings = typeof monetizationSettings.$inferSelect;
+export type UserEducation = typeof userEducation.$inferSelect;

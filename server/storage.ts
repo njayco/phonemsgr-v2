@@ -8,6 +8,7 @@ import {
   type Notification,
   type UserSettings,
   type MonetizationSettings,
+  type UserEducation,
   users,
   userInterests,
   userBadges,
@@ -25,6 +26,7 @@ import {
   monetizationSettings,
   userSettings,
   notifications,
+  userEducation,
 } from "@shared/schema";
 import { db, pool } from "./db";
 import { eq, and, desc, sql, ne, inArray, or, ilike } from "drizzle-orm";
@@ -65,6 +67,11 @@ export interface IStorage {
 
   isUserInThread(userId: string, threadId: string): Promise<boolean>;
   getThreadParticipantIds(threadId: string): Promise<string[]>;
+
+  getEducation(userId: string): Promise<UserEducation[]>;
+  addEducation(userId: string, data: Partial<UserEducation>): Promise<UserEducation>;
+  updateEducation(id: string, userId: string, data: Partial<UserEducation>): Promise<UserEducation | null>;
+  deleteEducation(id: string, userId: string): Promise<boolean>;
 
   searchUsers(query: string, currentUserId: string): Promise<any[]>;
   getBuddyIds(userId: string): Promise<string[]>;
@@ -530,6 +537,52 @@ export class DatabaseStorage implements IStorage {
     } else {
       await db.insert(monetizationSettings).values({ userId, ...safeUpdates });
     }
+  }
+
+  async getEducation(userId: string): Promise<UserEducation[]> {
+    return db
+      .select()
+      .from(userEducation)
+      .where(eq(userEducation.userId, userId))
+      .orderBy(desc(userEducation.graduationYear));
+  }
+
+  async addEducation(userId: string, data: Partial<UserEducation>): Promise<UserEducation> {
+    const [edu] = await db
+      .insert(userEducation)
+      .values({
+        userId,
+        type: data.type || "college",
+        schoolName: data.schoolName || "",
+        degree: data.degree || "",
+        major: data.major || "",
+        graduationYear: data.graduationYear || null,
+      })
+      .returning();
+    return edu;
+  }
+
+  async updateEducation(id: string, userId: string, data: Partial<UserEducation>): Promise<UserEducation | null> {
+    const updates: any = {};
+    if (data.type !== undefined) updates.type = data.type;
+    if (data.schoolName !== undefined) updates.schoolName = data.schoolName;
+    if (data.degree !== undefined) updates.degree = data.degree;
+    if (data.major !== undefined) updates.major = data.major;
+    if (data.graduationYear !== undefined) updates.graduationYear = data.graduationYear;
+    const [edu] = await db
+      .update(userEducation)
+      .set(updates)
+      .where(and(eq(userEducation.id, id), eq(userEducation.userId, userId)))
+      .returning();
+    return edu || null;
+  }
+
+  async deleteEducation(id: string, userId: string): Promise<boolean> {
+    const result = await db
+      .delete(userEducation)
+      .where(and(eq(userEducation.id, id), eq(userEducation.userId, userId)))
+      .returning();
+    return result.length > 0;
   }
 
   async searchUsers(query: string, currentUserId: string): Promise<any[]> {

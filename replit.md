@@ -20,7 +20,7 @@ Phone Msgr is a kindness-based social messenger mobile app built with React Nati
 ## Project Structure
 ```
 shared/
-  schema.ts                # Drizzle ORM schema (17 tables) + Zod validation schemas
+  schema.ts                # Drizzle ORM schema (18 tables) + Zod validation schemas
 
 server/
   index.ts                 # Express server entry with session middleware + WebSocket setup
@@ -39,6 +39,7 @@ app/
   index.tsx                # Welcome/landing screen (redirects if authed)
   sign-in.tsx              # Sign in with username/password (API-backed)
   sign-up.tsx              # Registration with username/password/display name
+  edit-profile.tsx         # Edit profile (photo, occupation, company, education CRUD)
   new-message.tsx          # New message composer with user search (name/username/phone)
   create-post.tsx          # Create feed post with audience picker (everyone/buddy/nearby)
   nearby-list.tsx          # Nearby people list with message/add buddy/remove buddy actions

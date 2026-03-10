@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, Image, StyleSheet } from 'react-native';
 import Colors from '@/constants/colors';
 
 interface AvatarProps {
@@ -6,12 +6,14 @@ interface AvatarProps {
   size?: number;
   glowColor?: string;
   showGlow?: boolean;
+  imageUrl?: string;
 }
 
-export function Avatar({ name, size = 48, glowColor = Colors.dark.accentGreen, showGlow = false }: AvatarProps) {
+export function Avatar({ name, size = 48, glowColor = Colors.dark.accentGreen, showGlow = false, imageUrl }: AvatarProps) {
   const initials = name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
   const bgColors = ['#1a3a5c', '#2a1a4c', '#1a4c3a', '#4c1a1a', '#3a3a1a', '#1a3a3a'];
   const idx = name.charCodeAt(0) % bgColors.length;
+  const hasImage = !!imageUrl && imageUrl.length > 0;
 
   return (
     <View style={[
@@ -21,9 +23,13 @@ export function Avatar({ name, size = 48, glowColor = Colors.dark.accentGreen, s
     ]}>
       <View style={[
         styles.inner,
-        { width: size, height: size, borderRadius: size / 2, backgroundColor: bgColors[idx] }
+        { width: size, height: size, borderRadius: size / 2, backgroundColor: hasImage ? 'transparent' : bgColors[idx], overflow: 'hidden' }
       ]}>
-        <Text style={[styles.initials, { fontSize: size * 0.36 }]}>{initials}</Text>
+        {hasImage ? (
+          <Image source={{ uri: imageUrl }} style={{ width: size, height: size, borderRadius: size / 2 }} />
+        ) : (
+          <Text style={[styles.initials, { fontSize: size * 0.36 }]}>{initials}</Text>
+        )}
       </View>
     </View>
   );

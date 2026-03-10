@@ -138,8 +138,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const interests = await storage.getUserInterests(user.id);
     const badges = await storage.getUserBadges(user.id);
 
+    const education = await storage.getEducation(user.id);
     const { password: _, ...safeUser } = user;
-    return res.json({ ...safeUser, interests, badges, isOnline: true });
+    return res.json({ ...safeUser, interests, badges, education, isOnline: true });
   });
 
   app.get("/api/profile/:id", requireAuth, async (req, res) => {
@@ -149,13 +150,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
     const interests = await storage.getUserInterests(user.id);
     const badges = await storage.getUserBadges(user.id);
+    const education = await storage.getEducation(user.id);
     const { password: _, ...safeUser } = user;
-    return res.json({ ...safeUser, interests, badges });
+    return res.json({ ...safeUser, interests, badges, education });
   });
 
   app.patch("/api/profile", requireAuth, async (req, res) => {
     const userId = req.session.userId!;
-    const allowedFields = ["displayName", "avatarUrl", "phone", "inboxPrice"];
+    const allowedFields = ["displayName", "avatarUrl", "phone", "inboxPrice", "occupation", "company"];
     const updates: any = {};
     for (const field of allowedFields) {
       if (req.body[field] !== undefined) {
@@ -168,6 +170,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
     const { password: _, ...safeUser } = user;
     return res.json(safeUser);
+  });
+
+  app.get("/api/education", requireAuth, async (req, res) => {
+    const education = await storage.getEducation(req.session.userId!);
+    return res.json(education);
+  });
+
+  app.post("/api/education", requireAuth, async (req, res) => {
+    const { type, schoolName, degree, major, graduationYear } = req.body;
+    if (!schoolName) {
+      return res.status(400).json({ message: "schoolName required" });
+    }
+    const edu = await storage.addEducation(req.session.userId!, {
+      type: type || "college",
+      schoolName,
+      degree: degree || "",
+      major: major || "",
+      graduationYear: graduationYear ? parseInt(graduationYear) : null,
+    });
+    return res.json(edu);
+  });
+
+  app.patch("/api/education/:id", requireAuth, async (req, res) => {
+    const edu = await storage.updateEducation(req.params.id, req.session.userId!, req.body);
+    if (!edu) {
+      return res.status(404).json({ message: "Education entry not found" });
+    }
+    return res.json(edu);
+  });
+
+  app.delete("/api/education/:id", requireAuth, async (req, res) => {
+    const deleted = await storage.deleteEducation(req.params.id, req.session.userId!);
+    if (!deleted) {
+      return res.status(404).json({ message: "Education entry not found" });
+    }
+    return res.json({ success: true });
   });
 
   app.get("/api/threads", requireAuth, async (req, res) => {

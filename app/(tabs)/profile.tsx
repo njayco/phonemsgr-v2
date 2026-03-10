@@ -31,6 +31,9 @@ export default function ProfileScreen() {
   if (!user) return null;
 
   const recentActivity = activity || [];
+  const occupation = user.occupation || '';
+  const company = user.company || '';
+  const education = user.education || [];
 
   return (
     <View style={styles.container}>
@@ -46,11 +49,24 @@ export default function ProfileScreen() {
         </View>
 
         <View style={styles.avatarSection}>
-          <View style={styles.avatarGlow}>
-            <Avatar name={user.displayName || user.username} size={80} />
-          </View>
+          <Pressable onPress={() => router.push('/edit-profile')} style={styles.avatarGlow}>
+            <Avatar name={user.displayName || user.username} size={80} imageUrl={user.avatarUrl} />
+          </Pressable>
           <Text style={styles.username}>@{user.username}</Text>
+          {(occupation || company) ? (
+            <View style={styles.workRow}>
+              <Ionicons name="briefcase-outline" size={14} color={Colors.dark.textSecondary} />
+              <Text style={styles.workText}>
+                {occupation}{occupation && company ? ' at ' : ''}{company}
+              </Text>
+            </View>
+          ) : null}
         </View>
+
+        <Pressable style={styles.editProfileBtn} onPress={() => router.push('/edit-profile')}>
+          <Ionicons name="create-outline" size={16} color={Colors.dark.accentBlue} />
+          <Text style={styles.editProfileText}>Edit Profile</Text>
+        </Pressable>
 
         <GlassCard borderColor={Colors.dark.accentGreen}>
           <View style={styles.scoreRow}>
@@ -68,6 +84,32 @@ export default function ProfileScreen() {
           </View>
           <Text style={styles.repText}>Reputation Level {user.reputationLevel}/10</Text>
         </GlassCard>
+
+        {education.length > 0 && (
+          <GlassCard>
+            <Text style={styles.sectionTitle}>Education</Text>
+            {education.map((edu: any) => (
+              <View key={edu.id} style={styles.eduRow}>
+                <Ionicons
+                  name={edu.type === 'high_school' ? 'school-outline' : 'library-outline'}
+                  size={18}
+                  color={Colors.dark.accentBlue}
+                />
+                <View style={styles.eduInfo}>
+                  <Text style={styles.eduSchool}>{edu.schoolName}</Text>
+                  {edu.type === 'college' && edu.degree ? (
+                    <Text style={styles.eduDetail}>
+                      {edu.degree}{edu.major ? ` in ${edu.major}` : ''}
+                    </Text>
+                  ) : null}
+                  {edu.graduationYear ? (
+                    <Text style={styles.eduYear}>Class of {edu.graduationYear}</Text>
+                  ) : null}
+                </View>
+              </View>
+            ))}
+          </GlassCard>
+        )}
 
         <View style={styles.badgeRow}>
           {(user.badges || []).map((badge) => {
@@ -151,12 +193,32 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
   username: { fontSize: 20, fontFamily: 'Inter_700Bold', color: Colors.dark.text },
+  workRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  workText: { fontSize: 13, fontFamily: 'Inter_400Regular', color: Colors.dark.textSecondary },
+  editProfileBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.dark.accentBlue,
+    backgroundColor: Colors.dark.accentBlueDim,
+  },
+  editProfileText: { fontSize: 14, fontFamily: 'Inter_600SemiBold', color: Colors.dark.accentBlue },
   scoreRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 },
   scoreValue: { fontSize: 36, fontFamily: 'Inter_700Bold', color: Colors.dark.text },
   scoreLabel: { fontSize: 13, fontFamily: 'Inter_400Regular', color: Colors.dark.textSecondary, marginBottom: 12 },
   progressBarBg: { height: 6, backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 3, overflow: 'hidden' },
   progressBarFill: { height: 6, borderRadius: 3 },
   repText: { fontSize: 12, fontFamily: 'Inter_500Medium', color: Colors.dark.textSecondary, marginTop: 8 },
+  sectionTitle: { fontSize: 15, fontFamily: 'Inter_600SemiBold', color: Colors.dark.text, marginBottom: 8 },
+  eduRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: Colors.dark.separator },
+  eduInfo: { flex: 1, gap: 2 },
+  eduSchool: { fontSize: 14, fontFamily: 'Inter_600SemiBold', color: Colors.dark.text },
+  eduDetail: { fontSize: 12, fontFamily: 'Inter_400Regular', color: Colors.dark.textSecondary },
+  eduYear: { fontSize: 11, fontFamily: 'Inter_400Regular', color: Colors.dark.textMuted },
   badgeRow: { flexDirection: 'row', gap: 10 },
   badgeItem: { flex: 1, backgroundColor: Colors.dark.glassBackground, borderRadius: 14, borderWidth: 1, borderColor: Colors.dark.glassBorder, padding: 12, alignItems: 'center', gap: 6 },
   badgeIcon: { width: 36, height: 36, borderRadius: 18, backgroundColor: Colors.dark.accentBlueDim, alignItems: 'center', justifyContent: 'center' },
@@ -166,7 +228,6 @@ const styles = StyleSheet.create({
   statValue: { fontSize: 18, fontFamily: 'Inter_700Bold', color: Colors.dark.text },
   statLabel: { fontSize: 11, fontFamily: 'Inter_400Regular', color: Colors.dark.textMuted },
   statDivider: { width: 1, backgroundColor: Colors.dark.separator },
-  sectionTitle: { fontSize: 15, fontFamily: 'Inter_600SemiBold', color: Colors.dark.text, marginBottom: 8 },
   activityRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: Colors.dark.separator, gap: 10 },
   activityBadge: { backgroundColor: Colors.dark.accentGreenDim, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
   activityPoints: { fontSize: 13, fontFamily: 'Inter_600SemiBold', color: Colors.dark.accentGreen },

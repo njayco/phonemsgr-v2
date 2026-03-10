@@ -5,6 +5,15 @@ import { disconnectWebSocket } from '@/lib/websocket';
 import { setCacheUserId, cacheClearForUser } from '@/lib/local-cache';
 import { router } from 'expo-router';
 
+export interface EducationEntry {
+  id: string;
+  type: string;
+  schoolName: string;
+  degree: string;
+  major: string;
+  graduationYear: number | null;
+}
+
 export interface UserProfile {
   id: string;
   username: string;
@@ -22,6 +31,9 @@ export interface UserProfile {
   monthlyRevenue: number;
   inboxPrice: number;
   phone?: string;
+  occupation?: string;
+  company?: string;
+  education?: EducationEntry[];
 }
 
 interface AuthContextValue {

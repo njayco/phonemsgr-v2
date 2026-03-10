@@ -1,205 +1,49 @@
 # Phone Msgr 2026 - Kindness-Based Social Messenger
 
 ## Overview
-Phone Msgr is a kindness-based social messenger mobile app built with React Native / Expo. It enables local social connections, secure messaging, and community engagement with a premium futuristic dark UI aesthetic. Phase 5 adds instant messaging with optimistic send, WhatsApp-style delivery receipts, live keystroke typing preview, REDACTED message deletion, real-time kindness/comment updates via WebSocket, in-app notifications, and push notifications via expo-notifications.
+Phone Msgr is a kindness-based social messenger mobile app designed to foster local social connections and community engagement. It features secure messaging, real-time interactions, and a futuristic dark UI. The project aims to provide a platform for positive social interactions, incorporating a "kindness economy" to reward prosocial behavior. Key capabilities include instant messaging with advanced delivery features, real-time updates via WebSockets, in-app and push notifications, and a social feed with interactive elements. The business vision is to create a unique social networking experience focused on local community building and positive reinforcement.
 
-## Tech Stack
-- **Frontend**: React Native, Expo SDK 54, TypeScript, Expo Router (file-based routing)
-- **Backend**: Express.js (port 5000) with TypeScript, serving API + landing page
-- **Database**: PostgreSQL (Replit built-in) with Drizzle ORM
-- **Auth**: Express sessions with connect-pg-simple, scrypt password hashing
-- **Realtime**: WebSocket (ws package) for live message delivery, typing preview, receipts, kindness/comment events, notifications
-- **Push Notifications**: expo-notifications (native), Expo Push API (server), in-app fallback (web)
-- **State**: React Query for server state, React Context for auth
-- **Local Cache**: AsyncStorage with 14-day TTL for messages, threads, and feed posts
-- **Uploads**: Multer for file uploads (avatars, media, attachments)
-- **Location**: expo-location for GPS, web geolocation API fallback
-- **Styling**: React Native StyleSheet with custom dark theme (neon green/blue accents)
-- **Fonts**: Inter (400, 500, 600, 700 weights)
+## User Preferences
+I prefer simple language and clear, concise explanations.
+I want iterative development with frequent, small updates.
+Please ask for my confirmation before implementing any major architectural changes or feature removals.
+When making changes, prioritize performance and security.
+Do not make changes to the `shared/schema.ts` file without explicit approval, as it defines core data structures.
+Ensure all new features are accompanied by clear documentation or examples.
 
-## Project Structure
-```
-shared/
-  schema.ts                # Drizzle ORM schema (18 tables) + Zod validation schemas
+## System Architecture
+The application is built with a React Native frontend (Expo SDK 54, Expo Router) and an Express.js backend (TypeScript) serving an API and a landing page. PostgreSQL with Drizzle ORM is used for the database. Authentication is handled via Express sessions with `connect-pg-simple` and `scrypt` for password hashing. Real-time communication for messaging, typing previews, delivery receipts, kindness updates, and notifications is powered by WebSockets (`ws` package). Push notifications leverage `expo-notifications` and the Expo Push API, with an in-app fallback. State management uses React Query for server state and React Context for authentication. Local caching (AsyncStorage with 14-day TTL) is implemented for messages, threads, and feed posts. File uploads (avatars, media) use Multer. Location services are provided by `expo-location` with a web geolocation API fallback. The UI adopts a premium futuristic dark theme with neon green/blue accents and Inter font.
 
-server/
-  index.ts                 # Express server entry with session middleware + WebSocket setup
-  routes.ts                # All API routes (auth, threads, messages, feed, settings, nearby, buddies, search, kindness, notifications, push-token)
-  storage.ts               # DatabaseStorage class (IStorage interface, all CRUD methods incl. notifications, push tokens, message status/deletion)
-  db.ts                    # Drizzle database connection pool
-  auth.ts                  # Password hashing (scrypt) + session auth helpers
-  websocket.ts             # WebSocket server (user tracking, typing, receipts, message broadcast, kindness/comment events, online/offline presence)
-  push.ts                  # Push notification service (Expo Push API)
-  uploads.ts               # Multer file upload middleware (avatar, media, attachment)
-  seed.ts                  # Demo data seeding (6 users, threads, messages, posts, comments, buddy connections, presence)
-  templates/landing-page.html
+**Key Features Implemented:**
+- **Messaging:** Optimistic send, WhatsApp-style delivery receipts (sent, delivered, read), live keystroke typing preview, "REDACTED" message deletion.
+- **Social Feed:** Posts with audience targeting (everyone, buddy, nearby), comments, kindness awards, real-time updates.
+- **Kindness Economy:** Users can award kindness points to posts and comments, affecting kindness scores and triggering notifications.
+- **Notifications:** In-app and push notifications for new messages, kindness awards, and comments.
+- **User Management:** Profile editing, user search, buddy connections, nearby user discovery.
+- **Monetization:** Subscription plans and a revenue center for Executive users.
+- **Offline Resilience:** Mesh mode for offline functionality.
 
-app/
-  _layout.tsx              # Root layout with providers (Auth, QueryClient, Keyboard) + cache purge on start
-  index.tsx                # Welcome/landing screen (redirects if authed)
-  sign-in.tsx              # Sign in with username/password (API-backed)
-  sign-up.tsx              # Registration with username/password/display name
-  edit-profile.tsx         # Edit profile (photo, bio, link, occupation, company, education CRUD)
-  new-message.tsx          # New message composer with user search (name/username/phone)
-  create-post.tsx          # Create feed post with audience picker (everyone/buddy/nearby)
-  nearby-list.tsx          # Nearby people list with message/add buddy/remove buddy actions
-  +not-found.tsx           # 404 screen
-  (tabs)/
-    _layout.tsx            # Tab navigation + WebSocket connect/disconnect + notification badge on Home tab
-    index.tsx              # Home dashboard (kindness score, plan, recent activity, notification bell + notifications list)
-    live-field.tsx         # GPS proximity radar (buddy vs nearby toggle, real location)
-    feed.tsx               # Social feed with buddy/nearby filtering, comments, kindness awards, real-time WS updates
-    messages.tsx           # Chat thread list with compose button + local cache
-    profile.tsx            # User profile with bio, link, kindness score + badges + sign out
-  profile/
-    _layout.tsx            # Profile stack layout
-    [id].tsx               # Public user profile (bio, link, posts, education, badges, message button)
-  chat/[id].tsx            # Chat thread with optimistic send, delivery receipts (✓ ✓✓ blue ✓✓), live typing preview, REDACTED deletion, nudge (shake-to-nudge with haptic flash) + local cache
-  pricing.tsx              # Subscription plans (modal)
-  monetization.tsx         # Revenue center for Executive users (API-backed)
-  offline.tsx              # Mesh mode / offline resilience
-  settings.tsx             # Privacy, notifications (push toggle), account settings (API-backed)
+**Design System:**
+- **Color Scheme:** Deep black background (`#0A0A0F`), various shades of dark surfaces, accent blues (`#00AAFF`), greens (`#00FF88`), and cyans (`#00E5FF`). Warning elements use `#FFB800`.
+- **UI Components:** Glassmorphism cards with `rgba` borders and subtle backgrounds, initial-based avatars with optional glow, glowing CTA buttons.
 
-components/
-  Avatar.tsx               # Initial-based avatar with optional glow
-  GlassCard.tsx            # Glassmorphism card component
-  GlowButton.tsx           # Glowing CTA button
-  StatusChip.tsx           # Online/offline status chip
-  ErrorBoundary.tsx        # Error boundary wrapper
-  ErrorFallback.tsx        # Error fallback UI
+**Technical Implementations:**
+- **Auth:** Session-based authentication with `userId` stored in `req.session`.
+- **Database Schema:** Comprehensive schema covering users, messages, threads, posts, comments, kindness ledger, notifications, and user settings. Key fields include message `status` (`sent/delivered/read`), `isDeleted`, and feed `audience`.
+- **API Endpoints:** RESTful API for all major features (auth, threads, feed, notifications, push tokens, user profiles, search, buddies, kindness, nearby, settings, monetization, uploads, downloads). All data routes require session authentication.
+- **WebSocket Protocol:** Defined events for authentication, typing, message status updates (read, delivered, deleted), new messages, kindness awards, and new comments/notifications.
+- **Push Notifications:** Handled server-side via Expo Push API for native clients; in-app for web. Token management through a dedicated API endpoint.
+- **Local Cache:** `AsyncStorage` with a 14-day TTL for performance optimization, particularly for feeds and chat history. Purged on app start.
 
-constants/
-  colors.ts                # Dark theme color system
-
-lib/
-  auth-context.tsx         # Server-backed auth provider (React Query, sessions, graceful sign-out)
-  websocket.ts             # WebSocket client (connect, disconnect, auto-reconnect, sendTyping, sendMessageRead, sendNudge, onWsEvent/offWsEvent listener system)
-  query-client.ts          # React Query client with API base URL + default fetcher
-  local-cache.ts           # AsyncStorage-based local cache with 14-day TTL
-  push-notifications.ts    # Push notification registration, permission handling, notification listeners
-  mock-data.ts             # Legacy demo data (reference only, not imported by screens)
-```
-
-## Database Schema (PostgreSQL + Drizzle ORM)
-Key tables in `shared/schema.ts`:
-- `users` — profiles with plan tier, kindness score, reputation, bio (200 char), link, isOnline, lastSeenAt, lastActiveAt, pushToken
-- `user_interests`, `user_badges` — user metadata
-- `message_threads`, `thread_participants` — messaging threads
-- `messages` — messages with `status` (sent/delivered/read), `isDeleted`, `deliveredAt`, `readAt`, `deletedAt`
-- `notifications` — in-app notifications (type: kindness_award, new_comment, new_message) with isRead flag
-- `feed_posts` — social feed with `audience` column (everyone/buddy/nearby), `viewsCount` for engagement tracking, `mediaUrl` for rich media
-- `feed_comments` — comments with kindnessScore
-- `feed_reactions` — likes with unique constraint per user per post
-- `post_views` — unique view tracking per user per post (postId + userId unique index)
-- `kindness_ledger` — kindness point history with actionType, actorUserId, targetType, targetId
-- `kindness_actions` — tracks cumulative kindness awards per user per target (multiple rows allowed, bounded [-10, +10] per actor per target)
-- `buddy_connections` — friend/buddy relationships (bidirectional, status: pending/accepted)
-- `nearby_presence` — location-based discovery (lat/lng/lastSeen)
-- `events` — hosted events (monetization)
-- `monetization_settings`, `user_settings` — per-user config
-- `session` — express-session store (connect-pg-simple)
-
-## API Routes
-All data routes require session authentication (`req.session.userId`).
-
-**Auth**: POST /api/auth/register, /api/auth/login, /api/auth/logout, GET /api/auth/me (forces isOnline=true)
-**Threads**: GET /api/threads, POST /api/threads, GET /api/threads/:id/messages, POST /api/threads/:id/messages
-**Message Deletion**: DELETE /api/threads/:threadId/messages/:messageId (sender only; marks isDeleted, broadcasts via WS)
-**Feed**: GET /api/feed?type=buddy|nearby, POST /api/feed (with audience), POST /api/feed/:id/like (+5 kindness), POST /api/feed/:id/comment, POST /api/feed/:id/view (tracks unique views)
-**Comments**: GET /api/feed/:id/comments
-**Kindness Awards**: POST /api/feed/:id/kindness (±10 on post), POST /api/feed/comments/:id/kindness (±10 on comment, post owner only), GET /api/feed/:id/my-kindness (user's cumulative delta on post), GET /api/feed/comments/:id/my-kindness (user's cumulative delta on comment)
-**Notifications**: GET /api/notifications, POST /api/notifications/:id/read, GET /api/notifications/unread-count
-**Push Token**: POST /api/push-token (stores/clears Expo push token)
-**User Posts**: GET /api/profile/:id/posts (user's feed posts)
-**Search**: GET /api/users/search?q= (searches displayName, username, phone)
-**Buddies**: GET /api/buddies, POST /api/buddies/:id, DELETE /api/buddies/:id
-**Kindness**: GET /api/kindness/history
-**Nearby**: GET /api/nearby?type=buddy|nearby&radius=400, POST /api/nearby/update
-**Settings**: GET /api/settings, PATCH /api/settings
-**Monetization**: GET /api/monetization, PATCH /api/monetization
-**Upload**: POST /api/upload/avatar, /api/upload/media, /api/upload/attachment
-**Download**: GET /api/download/:filename (forces download with Content-Disposition: attachment)
-
-## WebSocket Events
-Server-to-client and client-to-server event types:
-- `auth` (C→S) — authenticate with userId
-- `typing` (C→S, S→C) — live keystroke preview: `{ threadId, userId, text }`
-- `message_read` (C→S) — mark messages as read in thread
-- `new_message` (S→C) — new message received: `{ threadId, message }`
-- `message_delivered` (S→C) — delivery confirmation: `{ threadId, messageId }`
-- `messages_read` (S→C) — read receipt: `{ threadId, readByUserId }`
-- `message_deleted` (S→C) — message deletion: `{ threadId, messageId }`
-- `kindness_awarded` (S→C) — kindness update: `{ postId, delta, newKindnessScore }`
-- `new_comment` (S→C) — new comment on post: `{ postId, comment }`
-- `new_notification` (S→C) — in-app notification: `{ notification }`
-
-## Messaging Features
-- **Optimistic Send**: Messages appear instantly in chat with temp ID; replaced with server response on success
-- **Delivery Receipts**: Single gray check (sent), double gray checks (delivered), blue double checks (read)
-- **Live Typing Preview**: Other user sees characters typed/backspaced in real-time ghost bubble (throttled 100ms)
-- **Message Deletion**: Long-press to delete own messages; shows "REDACTED" with classified stamp
-- **REDACTED Style**: Dark red/amber tint, lock icon, "CLASSIFIED" timestamp
-
-## Push Notifications
-- **Native**: expo-notifications for iOS/Android via Expo Go
-- **Web**: In-app notifications only (no web push)
-- **Toggle**: Push notification permission toggle starts OFF (Expo guidelines)
-- **Backend**: Expo Push API via server/push.ts; sends for new messages, kindness awards, new comments
-- **Token Management**: POST /api/push-token stores/clears token per user
-
-## Kindness Economy
-- **Like a post**: Liker earns +5 kindness (one-time per post, not on own posts)
-- **Award post kindness**: Any user can +10 or -10 on a post (not on own posts); cumulative delta per user per post bounded to [-10, +10]; e.g. user can +10 then -10 (back to 0) then -10 again (to -10); buttons disable at limits; updates post's kindnessEarned and post owner's kindnessScore; triggers WS event + notification + push
-- **Award comment kindness**: Only post owner can +10 or -10 on comments on their post; cumulative delta per user per comment bounded to [-10, +10]; updates comment's kindnessScore and commenter's kindnessScore; triggers notification + push
-- **Kindness display**: Positive → green `+N Kindness`, Negative → red `-N Kindness`, Zero → grey `0 Kindness`
-- **Pull-to-refresh**: Feed supports pull-down-to-refresh for both buddy and nearby tabs
-- Cumulative tracking via `kindness_actions` table (multiple rows per user per target, SUM checked against bounds)
-
-## Local Cache (14-day TTL)
-- `lib/local-cache.ts` provides `cacheSet`, `cacheGet`, `cacheInvalidate`, `cachePurgeExpired`
-- Used in: feed.tsx (feed posts by tab), messages.tsx (thread list), chat/[id].tsx (messages per thread)
-- Cache is purged on app start via `cachePurgeExpired()` in _layout.tsx
-- Shows cached data immediately while API refetch runs in background
-
-## Demo Credentials
-- Username: `alexchen` / Password: `demo1234`
-- 5 other demo users seeded automatically on first startup
-- Demo buddy connections: alexchen ↔ barbaraw, alexchen ↔ miastardust, alexchen ↔ alexquantum
-- All demo users have nearby presence entries within 400m of each other
-
-## Design System
-- Background: #0A0A0F (deep black)
-- Surface: #12121A, #1A1A25
-- Accent Blue: #00AAFF (messaging, actions)
-- Accent Green: #00FF88 (kindness, resilience, online state)
-- Accent Cyan: #00E5FF (monetization)
-- Warning: #FFB800 (upgrades, offline)
-- Glass cards with rgba borders and subtle backgrounds
-
-## Workflows
-- **Start Backend**: `npm run server:dev` (Express + WebSocket on port 5000)
-- **Start Frontend**: `npm run expo:dev` (Expo on port 8081)
-
-## Environment Variables
-- `DATABASE_URL` — PostgreSQL connection string (auto-provided by Replit)
-- `SESSION_SECRET` — Session signing secret
-- `EXPO_PUBLIC_DOMAIN` — Backend domain for API requests (injected at dev/build time)
-
-## Important Notes
-- After login/signup use `router.replace('/')` NOT `router.replace('/(tabs)')` to avoid NativeStack crash
-- `trust proxy` is set on Express app for Replit's reverse proxy (required for secure cookies in production)
-- Session cookies use `sameSite: "none"` + `secure: true` in production (cross-origin Expo native app requests), `sameSite: "lax"` in development
-- `db:push` requires `--force` flag to avoid interactive prompt
-- WebSocket tracks online/offline presence: sets isOnline true on connect, false when all connections close
-- `/api/auth/me` forces isOnline=true for the requesting user (they are clearly active)
-- Sign-out wraps the logout API call in try/catch — always clears local state even if API fails
-- Feed audience values: "everyone", "buddy", "nearby" (default "everyone")
-- Nearby queries accept radius in meters (default 400m)
-- GPS: uses expo-location on native, web geolocation API on web, falls back to NYC coords
-- Message text replaced with "REDACTED" for deleted messages in both getMessages and getThreadsForUser
-
-## TODO
-- Anti-abuse/rate limiting on kindness actions
-- Content moderation review system
-- Analytics around kindness actions
-- More advanced presence handling (heartbeat, timeout)
+## External Dependencies
+- **Database:** PostgreSQL (Replit built-in)
+- **ORM:** Drizzle ORM
+- **Authentication Session Store:** `connect-pg-simple`
+- **Password Hashing:** `scrypt`
+- **Real-time Communication:** `ws` (WebSocket package)
+- **Push Notifications:** `expo-notifications` (client), Expo Push API (server)
+- **State Management:** React Query
+- **Local Storage:** `AsyncStorage` (React Native community package)
+- **File Uploads:** Multer
+- **Location Services:** `expo-location`
+- **Web Framework:** Express.js

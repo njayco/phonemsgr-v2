@@ -1,15 +1,13 @@
 import { useState } from 'react';
-import { View, Text, StyleSheet, Pressable, Platform, TextInput, ActivityIndicator, ScrollView, Image } from 'react-native';
+import { View, Text, StyleSheet, Pressable, Platform, TextInput, ScrollView, Image } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
-import { useMutation } from '@tanstack/react-query';
-import { fetch as expoFetch } from 'expo/fetch';
 import { GlassCard } from '@/components/GlassCard';
-import { apiRequest, queryClient, getApiUrl } from '@/lib/query-client';
+import { useUpload } from '@/lib/upload-context';
 import Colors from '@/constants/colors';
 
 type Audience = 'everyone' | 'buddy' | 'nearby';
@@ -38,11 +36,11 @@ const mediaTypes: { value: MediaType; icon: string; color: string }[] = [
 
 export default function CreatePostScreen() {
   const insets = useSafeAreaInsets();
+  const { startUpload } = useUpload();
   const [content, setContent] = useState('');
   const [audience, setAudience] = useState<Audience>('everyone');
   const [mediaType, setMediaType] = useState<MediaType>('text');
   const [selectedFile, setSelectedFile] = useState<SelectedFile | null>(null);
-  const [uploading, setUploading] = useState(false);
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
 
   const pickImage = async () => {
@@ -97,71 +95,19 @@ export default function CreatePostScreen() {
     }
   };
 
-  const uploadFile = async (): Promise<string | null> => {
-    if (!selectedFile) return null;
-    setUploading(true);
-    try {
-      const formData = new FormData();
-      if (Platform.OS === 'web') {
-        const response = await globalThis.fetch(selectedFile.uri);
-        const blob = await response.blob();
-        formData.append('file', blob, selectedFile.name);
-      } else {
-        formData.append('file', {
-          uri: selectedFile.uri,
-          name: selectedFile.name,
-          type: selectedFile.type,
-        } as any);
-      }
-      const apiUrl = getApiUrl();
-      const uploadUrl = new URL('/api/upload/media', apiUrl).toString();
-      const res = await expoFetch(uploadUrl, {
-        method: 'POST',
-        body: formData,
-        credentials: 'include',
-      });
-      if (!res.ok) {
-        const errText = await res.text().catch(() => '');
-        throw new Error(`Upload failed: ${res.status} ${errText}`);
-      }
-      const data = await res.json();
-      return data.url;
-    } catch (err) {
-      console.error('Upload error:', err);
-      return null;
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  const postMutation = useMutation({
-    mutationFn: async () => {
-      let mediaUrl: string | undefined;
-      if (selectedFile) {
-        const url = await uploadFile();
-        if (!url) throw new Error('File upload failed');
-        mediaUrl = url;
-      }
-      await apiRequest('POST', '/api/feed', {
-        content,
-        mediaType,
-        audience,
-        mediaUrl,
-      });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/feed'] });
-      router.back();
-    },
-  });
-
   const handlePost = () => {
     if (!content.trim() && !selectedFile) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    postMutation.mutate();
+    startUpload({
+      content,
+      mediaType,
+      audience,
+      file: selectedFile,
+    });
+    router.back();
   };
 
-  const canPost = (content.trim().length > 0 || selectedFile) && !postMutation.isPending && !uploading;
+  const canPost = content.trim().length > 0 || !!selectedFile;
 
   const handleMediaTypeChange = (mt: MediaType) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -200,11 +146,7 @@ export default function CreatePostScreen() {
           disabled={!canPost}
           testID="submit-post"
         >
-          {postMutation.isPending || uploading ? (
-            <ActivityIndicator color="#FFFFFF" size="small" />
-          ) : (
-            <Text style={[styles.postButtonText, !canPost && styles.postButtonTextDisabled]}>Post</Text>
-          )}
+          <Text style={[styles.postButtonText, !canPost && styles.postButtonTextDisabled]}>Post</Text>
         </Pressable>
       </View>
 
@@ -300,10 +242,6 @@ export default function CreatePostScreen() {
             ))}
           </View>
         </GlassCard>
-
-        {postMutation.isError && (
-          <Text style={styles.errorText}>Failed to create post. Please try again.</Text>
-        )}
       </ScrollView>
     </View>
   );
@@ -330,7 +268,6 @@ const styles = StyleSheet.create({
   audienceBtnActive: { borderWidth: 1, borderColor: Colors.dark.accentBlue },
   audienceBtnText: { fontSize: 12, fontFamily: 'Inter_500Medium', color: Colors.dark.textMuted },
   audienceBtnTextActive: { color: Colors.dark.accentBlue },
-  errorText: { fontSize: 13, fontFamily: 'Inter_400Regular', color: Colors.dark.offlineRed, textAlign: 'center', marginTop: 12 },
   pickFileBtn: { alignItems: 'center', justifyContent: 'center', paddingVertical: 24, gap: 8, borderWidth: 1, borderColor: Colors.dark.glassBorder, borderRadius: 12, borderStyle: 'dashed' as const },
   pickFileText: { fontSize: 15, fontFamily: 'Inter_600SemiBold' },
   pickFileHint: { fontSize: 12, fontFamily: 'Inter_400Regular', color: Colors.dark.textMuted },

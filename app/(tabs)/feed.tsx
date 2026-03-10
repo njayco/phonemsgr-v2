@@ -10,6 +10,7 @@ import { Avatar } from '@/components/Avatar';
 import { GlassCard } from '@/components/GlassCard';
 import { apiRequest, queryClient, getApiUrl } from '@/lib/query-client';
 import { useAuth } from '@/lib/auth-context';
+import { useUpload } from '@/lib/upload-context';
 import { cacheGet, cacheSet } from '@/lib/local-cache';
 import Colors from '@/constants/colors';
 import { fetch } from 'expo/fetch';
@@ -618,9 +619,72 @@ function FeedPostItem({ post, currentUserId }: { post: FeedPostData; currentUser
   );
 }
 
+function UploadingCard() {
+  const { pendingUpload, clearUpload } = useUpload();
+  const { user } = useAuth();
+
+  if (!pendingUpload) return null;
+
+  const { progress, status, content, mediaType, previewUri } = pendingUpload;
+  const isDone = status === 'done';
+  const isError = status === 'error';
+  const pct = status === 'creating' ? 100 : progress;
+
+  const statusText = isError ? 'Upload failed' : isDone ? 'Posted!' : status === 'creating' ? 'Publishing...' : `Uploading ${pct}%`;
+  const barColor = isError ? Colors.dark.offlineRed : isDone ? Colors.dark.kindnessGreen : Colors.dark.accentBlue;
+
+  const mediaIcon = mediaType === 'image' ? 'image' : mediaType === 'video' ? 'videocam' : mediaType === 'audio' ? 'musical-notes' : mediaType === 'document' ? 'document-text' : 'text';
+
+  return (
+    <GlassCard style={uploadStyles.card}>
+      <View style={uploadStyles.progressBarBg}>
+        <View style={[uploadStyles.progressBarFill, { width: `${pct}%`, backgroundColor: barColor }]} />
+      </View>
+      <View style={uploadStyles.row}>
+        {previewUri ? (
+          <Image source={{ uri: previewUri }} style={uploadStyles.preview} resizeMode="cover" />
+        ) : (
+          <View style={uploadStyles.iconWrap}>
+            <Ionicons name={mediaIcon as any} size={22} color={Colors.dark.accentBlue} />
+          </View>
+        )}
+        <View style={uploadStyles.info}>
+          <View style={uploadStyles.nameRow}>
+            <Avatar name={user?.displayName || user?.username || 'You'} size={20} />
+            <Text style={uploadStyles.username}>{user?.username || 'You'}</Text>
+          </View>
+          {!!content && <Text style={uploadStyles.content} numberOfLines={1}>{content}</Text>}
+          <Text style={[uploadStyles.status, isError && { color: Colors.dark.offlineRed }, isDone && { color: Colors.dark.kindnessGreen }]}>{statusText}</Text>
+        </View>
+        {isError && (
+          <Pressable onPress={clearUpload} style={uploadStyles.dismissBtn}>
+            <Ionicons name="close-circle" size={22} color={Colors.dark.textMuted} />
+          </Pressable>
+        )}
+      </View>
+    </GlassCard>
+  );
+}
+
+const uploadStyles = StyleSheet.create({
+  card: { marginHorizontal: 16, marginBottom: 12, overflow: 'hidden' },
+  progressBarBg: { height: 3, backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 2 },
+  progressBarFill: { height: 3, borderRadius: 2 },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingTop: 10 },
+  preview: { width: 48, height: 48, borderRadius: 8 },
+  iconWrap: { width: 48, height: 48, borderRadius: 8, backgroundColor: 'rgba(0,170,255,0.1)', alignItems: 'center', justifyContent: 'center' },
+  info: { flex: 1, gap: 2 },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  username: { fontSize: 13, fontFamily: 'Inter_600SemiBold', color: Colors.dark.text },
+  content: { fontSize: 13, fontFamily: 'Inter_400Regular', color: Colors.dark.textSecondary },
+  status: { fontSize: 12, fontFamily: 'Inter_500Medium', color: Colors.dark.accentBlue },
+  dismissBtn: { padding: 4 },
+});
+
 export default function FeedScreen() {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
+  const { pendingUpload } = useUpload();
   const [feedTab, setFeedTab] = useState<'buddy' | 'nearby'>('buddy');
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
   const viewedPostsRef = useRef<Set<string>>(new Set());
@@ -652,6 +716,14 @@ export default function FeedScreen() {
       if (cached) setCachedPosts(cached);
     });
   }, [cacheKey]);
+
+  const prevUploadStatus = useRef<string | null>(null);
+  useEffect(() => {
+    if (pendingUpload?.status === 'done' && prevUploadStatus.current !== 'done') {
+      queryClient.invalidateQueries({ queryKey: ['/api/feed'] });
+    }
+    prevUploadStatus.current = pendingUpload?.status || null;
+  }, [pendingUpload?.status]);
 
   const handleRefresh = useCallback(() => {
     setRefreshing(true);
@@ -718,6 +790,7 @@ export default function FeedScreen() {
           data={feedPosts}
           keyExtractor={(item) => item.id}
           renderItem={({ item }) => <FeedPostItem post={item} currentUserId={currentUserId} />}
+          ListHeaderComponent={<UploadingCard />}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
           scrollEnabled={feedPosts.length > 0}

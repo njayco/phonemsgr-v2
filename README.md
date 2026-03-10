@@ -264,10 +264,11 @@ Server-to-client and client-to-server event types:
 - Monthly revenue card (Executive users)
 
 ### Messaging
-- Thread list with profile avatars and unread badges
+- Thread list with profile avatars and unread badges — tapping anywhere on a thread row opens the chat
 - Search/filter threads
 - E2E encryption indicator chips
 - Online/offline mode chips per contact
+- **Chat header profile navigation** — tap avatar or name in chat header to view participant's profile
 - **New Message Composer** — search users by name, @username, or phone number
 - **Optimistic Send** — messages appear instantly with temp ID, replaced on server response
 - **Delivery Receipts** — single gray check (sent), double gray checks (delivered), blue double checks (read)

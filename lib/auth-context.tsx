@@ -3,6 +3,7 @@ import { apiRequest, getQueryFn, queryClient } from '@/lib/query-client';
 import { useQuery } from '@tanstack/react-query';
 import { disconnectWebSocket } from '@/lib/websocket';
 import { setCacheUserId, cacheClearForUser } from '@/lib/local-cache';
+import { router } from 'expo-router';
 
 export interface UserProfile {
   id: string;
@@ -72,13 +73,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(async () => {
     disconnectWebSocket();
+    queryClient.cancelQueries();
+    setCacheUserId(null);
+    queryClient.setQueryData(['/api/auth/me'], null);
+    queryClient.removeQueries({ predicate: (query) => query.queryKey[0] !== '/api/auth/me' });
+    router.replace('/');
     try {
       await apiRequest('POST', '/api/auth/logout');
     } catch {
     }
-    setCacheUserId(null);
-    queryClient.setQueryData(['/api/auth/me'], null);
-    queryClient.removeQueries({ predicate: (query) => query.queryKey[0] !== '/api/auth/me' });
   }, []);
 
   const updateUser = useCallback((updates: Partial<UserProfile>) => {

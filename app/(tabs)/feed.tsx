@@ -80,15 +80,17 @@ function MediaPreview({ type }: { type: string }) {
   );
 }
 
-function CommentItem({ comment, isPostOwner, onAwardKindness, commentDeltas }: {
+function CommentItem({ comment, isPostOwner, onAwardKindness, commentDeltas, commentScoreOffsets }: {
   comment: CommentData;
   isPostOwner: boolean;
   onAwardKindness: (commentId: string, delta: number) => void;
   commentDeltas: Record<string, number>;
+  commentScoreOffsets: Record<string, number>;
 }) {
   const myDelta = commentDeltas[comment.id] || 0;
   const atMax = myDelta >= 10;
   const atMin = myDelta <= -10;
+  const displayScore = comment.kindnessScore + (commentScoreOffsets[comment.id] || 0);
 
   return (
     <View style={styles.commentRow}>
@@ -100,10 +102,10 @@ function CommentItem({ comment, isPostOwner, onAwardKindness, commentDeltas }: {
         </View>
         <Text style={styles.commentText}>{comment.text}</Text>
         <View style={styles.commentFooter}>
-          <View style={[styles.commentKindnessBadge, { backgroundColor: kindnessBg(comment.kindnessScore) }]}>
-            <Ionicons name="heart" size={10} color={kindnessColor(comment.kindnessScore)} />
-            <Text style={[styles.commentKindnessText, { color: kindnessColor(comment.kindnessScore) }]}>
-              {kindnessLabel(comment.kindnessScore)}
+          <View style={[styles.commentKindnessBadge, { backgroundColor: kindnessBg(displayScore) }]}>
+            <Ionicons name="heart" size={10} color={kindnessColor(displayScore)} />
+            <Text style={[styles.commentKindnessText, { color: kindnessColor(displayScore) }]}>
+              {kindnessLabel(displayScore)}
             </Text>
           </View>
           {isPostOwner && (
@@ -144,6 +146,9 @@ function FeedPostItem({ post, currentUserId }: { post: FeedPostData; currentUser
   const [localKindness, setLocalKindness] = useState(post.kindnessEarned);
   const [myPostDelta, setMyPostDelta] = useState(0);
   const [commentDeltas, setCommentDeltas] = useState<Record<string, number>>({});
+  const [commentScoreOffsets, setCommentScoreOffsets] = useState<Record<string, number>>({});
+  const [postKindnessInFlight, setPostKindnessInFlight] = useState(false);
+  const [commentKindnessInFlight, setCommentKindnessInFlight] = useState<Record<string, boolean>>({});
   const isPostOwner = post.userId === currentUserId;
 
   useEffect(() => {
@@ -219,40 +224,70 @@ function FeedPostItem({ post, currentUserId }: { post: FeedPostData; currentUser
 
   const postKindnessMutation = useMutation({
     mutationFn: async (delta: number) => {
+      setPostKindnessInFlight(true);
       const res = await apiRequest('POST', `/api/feed/${post.id}/kindness`, { delta });
       return res.json();
     },
-    onSuccess: (data: any, delta: number) => {
+    onMutate: (delta: number) => {
+      const prevKindness = localKindness;
+      const prevDelta = myPostDelta;
       setLocalKindness((prev) => prev + delta);
+      setMyPostDelta((prev) => prev + delta);
+      return { prevKindness, prevDelta };
+    },
+    onSuccess: (data: any) => {
       if (typeof data.userDelta === 'number') {
         setMyPostDelta(data.userDelta);
       }
       queryClient.invalidateQueries({ queryKey: ['/api/feed'] });
       queryClient.invalidateQueries({ queryKey: ['/api/kindness/history'] });
     },
-    onError: (err: any) => {
+    onError: (err: any, _delta: number, context: any) => {
+      if (context) {
+        setLocalKindness(context.prevKindness);
+        setMyPostDelta(context.prevDelta);
+      }
       const msg = err?.message || 'Kindness limit reached';
       setKindnessToast(msg);
       setTimeout(() => setKindnessToast(''), 2500);
+    },
+    onSettled: () => {
+      setPostKindnessInFlight(false);
     },
   });
 
   const commentKindnessMutation = useMutation({
     mutationFn: async ({ commentId, delta }: { commentId: string; delta: number }) => {
+      setCommentKindnessInFlight((prev) => ({ ...prev, [commentId]: true }));
       const res = await apiRequest('POST', `/api/feed/comments/${commentId}/kindness`, { delta });
       return res.json();
+    },
+    onMutate: (variables: { commentId: string; delta: number }) => {
+      const prevDelta = commentDeltas[variables.commentId] || 0;
+      const prevScoreOffset = commentScoreOffsets[variables.commentId] || 0;
+      setCommentDeltas((prev) => ({ ...prev, [variables.commentId]: prevDelta + variables.delta }));
+      setCommentScoreOffsets((prev) => ({ ...prev, [variables.commentId]: prevScoreOffset + variables.delta }));
+      return { prevDelta, prevScoreOffset, commentId: variables.commentId };
     },
     onSuccess: (data: any, variables: { commentId: string; delta: number }) => {
       if (typeof data.userDelta === 'number') {
         setCommentDeltas((prev) => ({ ...prev, [variables.commentId]: data.userDelta }));
       }
+      setCommentScoreOffsets((prev) => ({ ...prev, [variables.commentId]: 0 }));
       queryClient.invalidateQueries({ queryKey: ['/api/feed', post.id, 'comments'] });
       queryClient.invalidateQueries({ queryKey: ['/api/kindness/history'] });
     },
-    onError: (err: any) => {
+    onError: (err: any, variables: { commentId: string; delta: number }, context: any) => {
+      if (context) {
+        setCommentDeltas((prev) => ({ ...prev, [context.commentId]: context.prevDelta }));
+        setCommentScoreOffsets((prev) => ({ ...prev, [context.commentId]: context.prevScoreOffset }));
+      }
       const msg = err?.message || 'Kindness limit reached';
       setKindnessToast(msg);
       setTimeout(() => setKindnessToast(''), 2500);
+    },
+    onSettled: (_data: any, _err: any, variables: { commentId: string; delta: number }) => {
+      setCommentKindnessInFlight((prev) => ({ ...prev, [variables.commentId]: false }));
     },
   });
 
@@ -271,6 +306,7 @@ function FeedPostItem({ post, currentUserId }: { post: FeedPostData; currentUser
   };
 
   const handleCommentKindness = (commentId: string, delta: number) => {
+    if (commentKindnessInFlight[commentId]) return;
     commentKindnessMutation.mutate({ commentId, delta });
   };
 
@@ -305,7 +341,7 @@ function FeedPostItem({ post, currentUserId }: { post: FeedPostData; currentUser
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 postKindnessMutation.mutate(10);
               }}
-              disabled={postKindnessMutation.isPending || postAtMax}
+              disabled={postAtMax || postKindnessInFlight}
             >
               <Text style={styles.kindnessAwardPlus}>+10</Text>
             </Pressable>
@@ -315,7 +351,7 @@ function FeedPostItem({ post, currentUserId }: { post: FeedPostData; currentUser
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 postKindnessMutation.mutate(-10);
               }}
-              disabled={postKindnessMutation.isPending || postAtMin}
+              disabled={postAtMin || postKindnessInFlight}
             >
               <Text style={styles.kindnessAwardMinus}>-10</Text>
             </Pressable>
@@ -351,6 +387,7 @@ function FeedPostItem({ post, currentUserId }: { post: FeedPostData; currentUser
               isPostOwner={isPostOwner}
               onAwardKindness={handleCommentKindness}
               commentDeltas={commentDeltas}
+              commentScoreOffsets={commentScoreOffsets}
             />
           ))}
           <View style={styles.commentInputRow}>

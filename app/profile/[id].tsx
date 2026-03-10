@@ -1,9 +1,11 @@
-import { View, Text, ScrollView, StyleSheet, Pressable, Platform, ActivityIndicator, Linking } from 'react-native';
+import { useState, useRef, useEffect } from 'react';
+import { View, Text, ScrollView, StyleSheet, Pressable, Platform, ActivityIndicator, Linking, Image } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useQuery } from '@tanstack/react-query';
+import { Audio, Video, ResizeMode } from 'expo-av';
 import { Avatar } from '@/components/Avatar';
 import { GlassCard } from '@/components/GlassCard';
 import { useAuth } from '@/lib/auth-context';
@@ -43,11 +45,86 @@ interface PostData {
   id: string;
   content: string;
   mediaType: string;
+  mediaUrl?: string;
   kindnessEarned: number;
   likes: number;
   comments: number;
+  views?: number;
   timestamp: number;
 }
+
+function getFullMediaUrl(mediaUrl: string): string {
+  if (mediaUrl.startsWith('http')) return mediaUrl;
+  const base = getApiUrl();
+  return new URL(mediaUrl, base).toString();
+}
+
+function getDownloadUrl(mediaUrl: string): string {
+  if (!mediaUrl) return '';
+  const filename = mediaUrl.split('/').pop() || '';
+  const base = getApiUrl();
+  return new URL(`/api/download/${filename}`, base).toString();
+}
+
+function ProfileMediaContent({ post }: { post: PostData }) {
+  if (post.mediaType === 'text' || !post.mediaUrl) return null;
+  const fullUrl = getFullMediaUrl(post.mediaUrl);
+  const downloadUrl = getDownloadUrl(post.mediaUrl);
+
+  return (
+    <View>
+      {post.mediaType === 'image' && (
+        <Image source={{ uri: fullUrl }} style={profileMediaStyles.image} resizeMode="cover" />
+      )}
+      {post.mediaType === 'video' && (
+        <View style={profileMediaStyles.videoContainer}>
+          <Video
+            source={{ uri: fullUrl }}
+            style={profileMediaStyles.video}
+            resizeMode={ResizeMode.COVER}
+            useNativeControls
+          />
+        </View>
+      )}
+      {post.mediaType === 'audio' && (
+        <View style={profileMediaStyles.audioContainer}>
+          <Ionicons name="musical-notes" size={24} color={Colors.dark.accentCyan} />
+          <Text style={profileMediaStyles.audioTitle} numberOfLines={1}>{post.content || 'Audio Track'}</Text>
+        </View>
+      )}
+      {post.mediaType === 'document' && (
+        <View style={profileMediaStyles.docContainer}>
+          <Ionicons name="document-text" size={24} color={Colors.dark.accentCyan} />
+          <Text style={profileMediaStyles.docName} numberOfLines={1}>{post.content || 'Document'}</Text>
+        </View>
+      )}
+      {downloadUrl && (
+        <Pressable
+          style={profileMediaStyles.downloadBtn}
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            Linking.openURL(downloadUrl);
+          }}
+        >
+          <Ionicons name="download-outline" size={14} color={Colors.dark.accentCyan} />
+          <Text style={profileMediaStyles.downloadText}>Download</Text>
+        </Pressable>
+      )}
+    </View>
+  );
+}
+
+const profileMediaStyles = StyleSheet.create({
+  image: { width: '100%', height: 160, borderRadius: 10, marginBottom: 8 },
+  videoContainer: { borderRadius: 10, overflow: 'hidden', height: 160, marginBottom: 8 },
+  video: { width: '100%', height: '100%' },
+  audioContainer: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 10, borderRadius: 10, backgroundColor: 'rgba(0,229,255,0.06)', borderWidth: 1, borderColor: 'rgba(0,229,255,0.15)', marginBottom: 8 },
+  audioTitle: { flex: 1, fontSize: 13, fontFamily: 'Inter_500Medium', color: Colors.dark.text },
+  docContainer: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 10, borderRadius: 10, backgroundColor: 'rgba(0,229,255,0.06)', borderWidth: 1, borderColor: 'rgba(0,229,255,0.15)', marginBottom: 8 },
+  docName: { flex: 1, fontSize: 13, fontFamily: 'Inter_500Medium', color: Colors.dark.text },
+  downloadBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, paddingVertical: 6, marginBottom: 6, borderRadius: 8, backgroundColor: 'rgba(0,229,255,0.08)', borderWidth: 1, borderColor: 'rgba(0,229,255,0.2)' },
+  downloadText: { fontSize: 12, fontFamily: 'Inter_500Medium', color: Colors.dark.accentCyan },
+});
 
 export default function UserProfileScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -267,7 +344,8 @@ export default function UserProfileScreen() {
           ) : (
             userPosts.map((post) => (
               <GlassCard key={post.id} style={styles.postCard}>
-                {post.content ? <Text style={styles.postContent}>{post.content}</Text> : null}
+                {post.content && post.mediaType !== 'audio' ? <Text style={styles.postContent}>{post.content}</Text> : null}
+                <ProfileMediaContent post={post} />
                 <View style={styles.postMeta}>
                   <View style={styles.postStat}>
                     <Ionicons name="heart" size={12} color={Colors.dark.kindnessGreen} />
@@ -280,6 +358,10 @@ export default function UserProfileScreen() {
                   <View style={styles.postStat}>
                     <Ionicons name="chatbubble" size={12} color={Colors.dark.textMuted} />
                     <Text style={styles.postStatText}>{post.comments}</Text>
+                  </View>
+                  <View style={styles.postStat}>
+                    <Ionicons name="eye-outline" size={12} color={Colors.dark.textMuted} />
+                    <Text style={styles.postStatText}>{post.views || 0}</Text>
                   </View>
                   <Text style={styles.postTime}>{timeAgo(post.timestamp)}</Text>
                 </View>

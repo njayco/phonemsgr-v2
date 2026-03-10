@@ -397,6 +397,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     return res.status(201).json(post);
   });
 
+  app.post("/api/feed/:id/view", requireAuth, async (req, res) => {
+    const userId = req.session.userId!;
+    await storage.recordPostView(req.params.id, userId);
+    return res.json({ success: true });
+  });
+
   app.post("/api/feed/:id/like", requireAuth, async (req, res) => {
     const userId = req.session.userId!;
     await storage.likePost(req.params.id, userId);

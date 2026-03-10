@@ -10,6 +10,7 @@ import {
   primaryKey,
   uniqueIndex,
   index,
+  serial,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -136,8 +137,24 @@ export const feedPosts = pgTable("feed_posts", {
   kindnessEarned: integer("kindness_earned").notNull().default(0),
   likesCount: integer("likes_count").notNull().default(0),
   commentsCount: integer("comments_count").notNull().default(0),
+  viewsCount: integer("views_count").notNull().default(0),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+
+export const postViews = pgTable(
+  "post_views",
+  {
+    id: serial("id").primaryKey(),
+    postId: varchar("post_id", { length: 36 })
+      .notNull()
+      .references(() => feedPosts.id, { onDelete: "cascade" }),
+    userId: varchar("user_id", { length: 36 })
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    viewedAt: timestamp("viewed_at").defaultNow().notNull(),
+  },
+  (table) => [uniqueIndex("post_view_unique").on(table.postId, table.userId)],
+);
 
 export const feedComments = pgTable("feed_comments", {
   id: varchar("id", { length: 36 })

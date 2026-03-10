@@ -1,10 +1,11 @@
-import { useState, useEffect, useCallback } from 'react';
-import { View, Text, FlatList, StyleSheet, Pressable, Platform, ActivityIndicator, TextInput, RefreshControl } from 'react-native';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { View, Text, FlatList, StyleSheet, Pressable, Platform, ActivityIndicator, TextInput, RefreshControl, Image, Linking, ViewToken } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useQuery, useMutation } from '@tanstack/react-query';
+import { Audio, Video, ResizeMode } from 'expo-av';
 import { Avatar } from '@/components/Avatar';
 import { GlassCard } from '@/components/GlassCard';
 import { apiRequest, queryClient, getApiUrl } from '@/lib/query-client';
@@ -25,6 +26,7 @@ interface FeedPostData {
   kindnessEarned: number;
   likes: number;
   comments: number;
+  views?: number;
 }
 
 interface CommentData {
@@ -65,17 +67,206 @@ function kindnessBg(value: number): string {
   return 'rgba(255,255,255,0.06)';
 }
 
-function MediaPreview({ type }: { type: string }) {
-  const iconMap: Record<string, { name: string; color: string; bg: string }> = {
-    video: { name: 'play-circle', color: Colors.dark.accentGreen, bg: 'rgba(0,255,136,0.08)' },
-    image: { name: 'images', color: Colors.dark.accentBlue, bg: 'rgba(0,170,255,0.08)' },
-    audio: { name: 'musical-notes', color: '#FF6B9D', bg: 'rgba(255,107,157,0.08)' },
-    document: { name: 'document-text', color: Colors.dark.accentCyan, bg: 'rgba(0,229,255,0.08)' },
-  };
-  const info = iconMap[type] || iconMap.image;
+function getFullMediaUrl(mediaUrl: string): string {
+  if (mediaUrl.startsWith('http')) return mediaUrl;
+  const base = getApiUrl();
+  return new URL(mediaUrl, base).toString();
+}
+
+function getDownloadUrl(mediaUrl: string): string {
+  if (!mediaUrl) return '';
+  const filename = mediaUrl.split('/').pop() || '';
+  const base = getApiUrl();
+  return new URL(`/api/download/${filename}`, base).toString();
+}
+
+function ImageMedia({ mediaUrl }: { mediaUrl: string }) {
+  const fullUrl = getFullMediaUrl(mediaUrl);
   return (
-    <View style={[styles.mediaPreview, { backgroundColor: info.bg }]}>
-      <Ionicons name={info.name as any} size={32} color={info.color} />
+    <View style={mediaStyles.imageContainer}>
+      <Image source={{ uri: fullUrl }} style={mediaStyles.image} resizeMode="cover" />
+    </View>
+  );
+}
+
+function VideoMedia({ mediaUrl }: { mediaUrl: string }) {
+  const fullUrl = getFullMediaUrl(mediaUrl);
+  const videoRef = useRef<Video>(null);
+  const [playing, setPlaying] = useState(false);
+
+  const togglePlay = async () => {
+    if (!videoRef.current) return;
+    if (playing) {
+      await videoRef.current.pauseAsync();
+      setPlaying(false);
+    } else {
+      await videoRef.current.playAsync();
+      setPlaying(true);
+    }
+  };
+
+  return (
+    <View style={mediaStyles.videoContainer}>
+      <Video
+        ref={videoRef}
+        source={{ uri: fullUrl }}
+        style={mediaStyles.video}
+        resizeMode={ResizeMode.COVER}
+        useNativeControls={playing}
+        onPlaybackStatusUpdate={(status) => {
+          if (status.isLoaded && status.didJustFinish) {
+            setPlaying(false);
+          }
+        }}
+      />
+      {!playing && (
+        <Pressable style={mediaStyles.playOverlay} onPress={togglePlay}>
+          <View style={mediaStyles.playButton}>
+            <Ionicons name="play" size={32} color="#FFFFFF" />
+          </View>
+          <Text style={mediaStyles.watchText}>WATCH VIDEO</Text>
+        </Pressable>
+      )}
+    </View>
+  );
+}
+
+function AudioMedia({ mediaUrl, title }: { mediaUrl: string; title: string }) {
+  const fullUrl = getFullMediaUrl(mediaUrl);
+  const [sound, setSound] = useState<Audio.Sound | null>(null);
+  const [playing, setPlaying] = useState(false);
+  const [position, setPosition] = useState(0);
+  const [duration, setDuration] = useState(0);
+
+  useEffect(() => {
+    return () => {
+      if (sound) {
+        sound.unloadAsync();
+      }
+    };
+  }, [sound]);
+
+  const togglePlay = async () => {
+    try {
+      if (sound && playing) {
+        await sound.pauseAsync();
+        setPlaying(false);
+      } else if (sound) {
+        await sound.playAsync();
+        setPlaying(true);
+      } else {
+        const { sound: newSound } = await Audio.Sound.createAsync(
+          { uri: fullUrl },
+          { shouldPlay: true },
+          (status) => {
+            if (status.isLoaded) {
+              setPosition(status.positionMillis || 0);
+              setDuration(status.durationMillis || 0);
+              if (status.didJustFinish) {
+                setPlaying(false);
+              }
+            }
+          }
+        );
+        setSound(newSound);
+        setPlaying(true);
+      }
+    } catch (err) {
+      console.error('Audio error:', err);
+    }
+  };
+
+  const formatTime = (ms: number) => {
+    const s = Math.floor(ms / 1000);
+    const m = Math.floor(s / 60);
+    const sec = s % 60;
+    return `${m}:${sec.toString().padStart(2, '0')}`;
+  };
+
+  const progress = duration > 0 ? position / duration : 0;
+  const displayTitle = title || 'Audio Track';
+
+  return (
+    <View style={mediaStyles.audioContainer}>
+      <Pressable onPress={togglePlay} style={mediaStyles.audioPlayBtn}>
+        <Ionicons name={playing ? 'pause' : 'play'} size={20} color="#FFFFFF" />
+      </Pressable>
+      <View style={mediaStyles.audioInfo}>
+        <Text style={mediaStyles.audioTitle} numberOfLines={1}>{displayTitle}</Text>
+        <View style={mediaStyles.waveformRow}>
+          {Array.from({ length: 24 }).map((_, i) => {
+            const barHeight = 8 + Math.sin(i * 0.8 + position * 0.001) * 10 + Math.random() * 2;
+            const isActive = i / 24 <= progress;
+            return (
+              <View
+                key={i}
+                style={[
+                  mediaStyles.waveformBar,
+                  {
+                    height: Math.max(4, barHeight),
+                    backgroundColor: isActive ? Colors.dark.accentCyan : 'rgba(0,229,255,0.2)',
+                  },
+                ]}
+              />
+            );
+          })}
+        </View>
+        <View style={mediaStyles.audioTimeRow}>
+          <Text style={mediaStyles.audioTime}>{formatTime(position)}</Text>
+          <Text style={mediaStyles.audioTime}>{formatTime(duration)}</Text>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+function DocumentMedia({ mediaUrl, content }: { mediaUrl: string; content: string }) {
+  const filename = mediaUrl.split('/').pop() || 'document';
+  const ext = filename.split('.').pop()?.toLowerCase() || '';
+  const isPpt = ['ppt', 'pptx', 'key'].includes(ext);
+  const isDoc = ['doc', 'docx'].includes(ext);
+  const isPdf = ext === 'pdf';
+
+  const iconName = isPpt ? 'easel' : isDoc ? 'document-text' : isPdf ? 'document' : 'document-attach';
+  const badgeText = isPpt ? 'PPT' : isDoc ? 'DOC' : isPdf ? 'PDF' : ext.toUpperCase();
+  const badgeColor = isPpt ? '#D24726' : isDoc ? '#2B579A' : isPdf ? '#FF4444' : Colors.dark.accentCyan;
+
+  return (
+    <View style={mediaStyles.docContainer}>
+      <View style={mediaStyles.docPreview}>
+        <Ionicons name={iconName as any} size={40} color={badgeColor} />
+        <View style={[mediaStyles.docBadge, { backgroundColor: badgeColor }]}>
+          <Text style={mediaStyles.docBadgeText}>{badgeText}</Text>
+        </View>
+      </View>
+      <Text style={mediaStyles.docName} numberOfLines={2}>{content || filename}</Text>
+    </View>
+  );
+}
+
+function MediaContent({ post }: { post: FeedPostData }) {
+  if (post.mediaType === 'text' || !post.mediaUrl) return null;
+
+  const downloadUrl = getDownloadUrl(post.mediaUrl);
+
+  return (
+    <View>
+      {post.mediaType === 'image' && <ImageMedia mediaUrl={post.mediaUrl} />}
+      {post.mediaType === 'video' && <VideoMedia mediaUrl={post.mediaUrl} />}
+      {post.mediaType === 'audio' && <AudioMedia mediaUrl={post.mediaUrl} title={post.content} />}
+      {post.mediaType === 'document' && <DocumentMedia mediaUrl={post.mediaUrl} content={post.content} />}
+      {downloadUrl && (
+        <Pressable
+          style={mediaStyles.downloadBtn}
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            Linking.openURL(downloadUrl);
+          }}
+        >
+          <Ionicons name="download-outline" size={14} color={Colors.dark.accentCyan} />
+          <Text style={mediaStyles.downloadText}>Download</Text>
+        </Pressable>
+      )}
     </View>
   );
 }
@@ -330,14 +521,20 @@ function FeedPostItem({ post, currentUserId }: { post: FeedPostData; currentUser
         </Pressable>
       </View>
 
-      {post.content ? <Text style={styles.postContent}>{post.content}</Text> : null}
+      {post.content && post.mediaType !== 'audio' ? <Text style={styles.postContent}>{post.content}</Text> : null}
 
-      {post.mediaType !== 'text' && <MediaPreview type={post.mediaType} />}
+      <MediaContent post={post} />
 
       <View style={styles.postFooter}>
-        <View style={[styles.kindnessEarned, { backgroundColor: kindnessBg(localKindness) }]}>
-          <Ionicons name="heart" size={14} color={kindnessColor(localKindness)} />
-          <Text style={[styles.kindnessText, { color: kindnessColor(localKindness) }]}>{kindnessLabel(localKindness)}</Text>
+        <View style={styles.footerLeft}>
+          <View style={[styles.kindnessEarned, { backgroundColor: kindnessBg(localKindness) }]}>
+            <Ionicons name="heart" size={14} color={kindnessColor(localKindness)} />
+            <Text style={[styles.kindnessText, { color: kindnessColor(localKindness) }]}>{kindnessLabel(localKindness)}</Text>
+          </View>
+          <View style={styles.viewsContainer}>
+            <Ionicons name="eye-outline" size={13} color={Colors.dark.textMuted} />
+            <Text style={styles.viewsText}>{post.views || 0}</Text>
+          </View>
         </View>
         {!isPostOwner && (
           <View style={styles.kindnessAwardRow}>
@@ -426,6 +623,7 @@ export default function FeedScreen() {
   const { user } = useAuth();
   const [feedTab, setFeedTab] = useState<'buddy' | 'nearby'>('buddy');
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
+  const viewedPostsRef = useRef<Set<string>>(new Set());
 
   const cacheKey = `feed_${feedTab}`;
 
@@ -461,6 +659,18 @@ export default function FeedScreen() {
       setRefreshing(false);
     });
   }, [refetch]);
+
+  const onViewableItemsChanged = useCallback(({ viewableItems }: { viewableItems: ViewToken[] }) => {
+    viewableItems.forEach((item) => {
+      const postId = item.item?.id;
+      if (postId && !viewedPostsRef.current.has(postId)) {
+        viewedPostsRef.current.add(postId);
+        apiRequest('POST', `/api/feed/${postId}/view`).catch(() => {});
+      }
+    });
+  }, []);
+
+  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 50 }).current;
 
   const feedPosts = posts || cachedPosts || [];
   const currentUserId = user?.id || '';
@@ -511,6 +721,8 @@ export default function FeedScreen() {
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
           scrollEnabled={feedPosts.length > 0}
+          onViewableItemsChanged={onViewableItemsChanged}
+          viewabilityConfig={viewabilityConfig}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -531,6 +743,31 @@ export default function FeedScreen() {
   );
 }
 
+const mediaStyles = StyleSheet.create({
+  imageContainer: { borderRadius: 12, overflow: 'hidden' },
+  image: { width: '100%', height: 200, borderRadius: 12 },
+  videoContainer: { borderRadius: 12, overflow: 'hidden', height: 200, backgroundColor: '#000' },
+  video: { width: '100%', height: '100%' },
+  playOverlay: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.35)' },
+  playButton: { width: 56, height: 56, borderRadius: 28, backgroundColor: 'rgba(0,255,136,0.8)', alignItems: 'center', justifyContent: 'center', marginBottom: 6 },
+  watchText: { fontSize: 11, fontFamily: 'Inter_700Bold', color: '#FFFFFF', letterSpacing: 1.5 },
+  audioContainer: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: 'rgba(0,229,255,0.06)', borderRadius: 12, padding: 12, borderWidth: 1, borderColor: 'rgba(0,229,255,0.15)' },
+  audioPlayBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: Colors.dark.accentCyan, alignItems: 'center', justifyContent: 'center' },
+  audioInfo: { flex: 1, gap: 4 },
+  audioTitle: { fontSize: 14, fontFamily: 'Inter_600SemiBold', color: Colors.dark.text },
+  waveformRow: { flexDirection: 'row', alignItems: 'center', gap: 2, height: 24 },
+  waveformBar: { width: 3, borderRadius: 1.5, minHeight: 4 },
+  audioTimeRow: { flexDirection: 'row', justifyContent: 'space-between' },
+  audioTime: { fontSize: 10, fontFamily: 'Inter_400Regular', color: Colors.dark.textMuted },
+  docContainer: { backgroundColor: 'rgba(0,229,255,0.06)', borderRadius: 12, padding: 16, alignItems: 'center', gap: 10, borderWidth: 1, borderColor: 'rgba(0,229,255,0.15)' },
+  docPreview: { width: 80, height: 80, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.05)', alignItems: 'center', justifyContent: 'center' },
+  docBadge: { position: 'absolute', bottom: -4, right: -4, borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 },
+  docBadgeText: { fontSize: 8, fontFamily: 'Inter_700Bold', color: '#FFFFFF' },
+  docName: { fontSize: 13, fontFamily: 'Inter_500Medium', color: Colors.dark.text, textAlign: 'center' },
+  downloadBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, paddingVertical: 6, marginTop: 6, borderRadius: 8, backgroundColor: 'rgba(0,229,255,0.08)', borderWidth: 1, borderColor: 'rgba(0,229,255,0.2)' },
+  downloadText: { fontSize: 12, fontFamily: 'Inter_500Medium', color: Colors.dark.accentCyan },
+});
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.dark.background },
   headerContainer: { paddingHorizontal: 16, paddingBottom: 12 },
@@ -550,10 +787,12 @@ const styles = StyleSheet.create({
   postUsername: { fontSize: 14, fontFamily: 'Inter_600SemiBold', color: Colors.dark.text },
   postTime: { fontSize: 11, fontFamily: 'Inter_400Regular', color: Colors.dark.textMuted },
   postContent: { fontSize: 14, fontFamily: 'Inter_400Regular', color: Colors.dark.text, lineHeight: 20 },
-  mediaPreview: { height: 120, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   postFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  footerLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   kindnessEarned: { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 },
   kindnessText: { fontSize: 12, fontFamily: 'Inter_600SemiBold' },
+  viewsContainer: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  viewsText: { fontSize: 11, fontFamily: 'Inter_400Regular', color: Colors.dark.textMuted },
   kindnessAwardRow: { flexDirection: 'row', gap: 6 },
   kindnessAwardBtn: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, backgroundColor: Colors.dark.surfaceElevated },
   kindnessAwardPlus: { fontSize: 12, fontFamily: 'Inter_600SemiBold', color: Colors.dark.accentGreen },

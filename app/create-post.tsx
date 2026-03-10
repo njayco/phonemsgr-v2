@@ -1,16 +1,25 @@
 import { useState } from 'react';
-import { View, Text, StyleSheet, Pressable, Platform, TextInput, ActivityIndicator, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, Pressable, Platform, TextInput, ActivityIndicator, ScrollView, Image } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import * as ImagePicker from 'expo-image-picker';
+import * as DocumentPicker from 'expo-document-picker';
 import { useMutation } from '@tanstack/react-query';
 import { GlassCard } from '@/components/GlassCard';
-import { apiRequest, queryClient } from '@/lib/query-client';
+import { apiRequest, queryClient, getApiUrl } from '@/lib/query-client';
 import Colors from '@/constants/colors';
 
 type Audience = 'everyone' | 'buddy' | 'nearby';
 type MediaType = 'text' | 'image' | 'video' | 'audio' | 'document';
+
+interface SelectedFile {
+  uri: string;
+  name: string;
+  type: string;
+  size?: number;
+}
 
 const audienceOptions: { value: Audience; label: string; icon: string }[] = [
   { value: 'everyone', label: 'Everyone', icon: 'globe-outline' },
@@ -31,14 +40,108 @@ export default function CreatePostScreen() {
   const [content, setContent] = useState('');
   const [audience, setAudience] = useState<Audience>('everyone');
   const [mediaType, setMediaType] = useState<MediaType>('text');
+  const [selectedFile, setSelectedFile] = useState<SelectedFile | null>(null);
+  const [uploading, setUploading] = useState(false);
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
+
+  const pickImage = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      quality: 0.8,
+    });
+    if (!result.canceled && result.assets[0]) {
+      const asset = result.assets[0];
+      const name = asset.fileName || `image_${Date.now()}.jpg`;
+      setSelectedFile({ uri: asset.uri, name, type: asset.mimeType || 'image/jpeg' });
+    }
+  };
+
+  const pickVideo = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['videos'],
+      allowsEditing: true,
+      quality: 0.7,
+      videoMaxDuration: 120,
+    });
+    if (!result.canceled && result.assets[0]) {
+      const asset = result.assets[0];
+      const name = asset.fileName || `video_${Date.now()}.mp4`;
+      setSelectedFile({ uri: asset.uri, name, type: asset.mimeType || 'video/mp4' });
+    }
+  };
+
+  const pickDocument = async () => {
+    const result = await DocumentPicker.getDocumentAsync({
+      type: mediaType === 'audio'
+        ? ['audio/*']
+        : ['application/pdf', 'application/vnd.ms-powerpoint', 'application/vnd.openxmlformats-officedocument.presentationml.presentation', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+      copyToCacheDirectory: true,
+    });
+    if (!result.canceled && result.assets && result.assets[0]) {
+      const asset = result.assets[0];
+      setSelectedFile({ uri: asset.uri, name: asset.name, type: asset.mimeType || 'application/octet-stream', size: asset.size || undefined });
+    }
+  };
+
+  const handlePickMedia = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (mediaType === 'image') {
+      await pickImage();
+    } else if (mediaType === 'video') {
+      await pickVideo();
+    } else if (mediaType === 'audio' || mediaType === 'document') {
+      await pickDocument();
+    }
+  };
+
+  const uploadFile = async (): Promise<string | null> => {
+    if (!selectedFile) return null;
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      if (Platform.OS === 'web') {
+        const response = await fetch(selectedFile.uri);
+        const blob = await response.blob();
+        formData.append('file', blob, selectedFile.name);
+      } else {
+        formData.append('file', {
+          uri: selectedFile.uri,
+          name: selectedFile.name,
+          type: selectedFile.type,
+        } as any);
+      }
+      const apiUrl = getApiUrl();
+      const uploadUrl = new URL('/api/upload/media', apiUrl).toString();
+      const res = await fetch(uploadUrl, {
+        method: 'POST',
+        body: formData,
+        credentials: 'include',
+      });
+      if (!res.ok) throw new Error('Upload failed');
+      const data = await res.json();
+      return data.url;
+    } catch (err) {
+      console.error('Upload error:', err);
+      return null;
+    } finally {
+      setUploading(false);
+    }
+  };
 
   const postMutation = useMutation({
     mutationFn: async () => {
+      let mediaUrl: string | undefined;
+      if (selectedFile) {
+        const url = await uploadFile();
+        if (!url) throw new Error('File upload failed');
+        mediaUrl = url;
+      }
       await apiRequest('POST', '/api/feed', {
         content,
         mediaType,
         audience,
+        mediaUrl,
       });
     },
     onSuccess: () => {
@@ -48,12 +151,36 @@ export default function CreatePostScreen() {
   });
 
   const handlePost = () => {
-    if (!content.trim()) return;
+    if (!content.trim() && !selectedFile) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     postMutation.mutate();
   };
 
-  const canPost = content.trim().length > 0 && !postMutation.isPending;
+  const canPost = (content.trim().length > 0 || selectedFile) && !postMutation.isPending && !uploading;
+
+  const handleMediaTypeChange = (mt: MediaType) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setMediaType(mt);
+    setSelectedFile(null);
+  };
+
+  const clearFile = () => {
+    setSelectedFile(null);
+  };
+
+  const getFileIcon = (): string => {
+    if (mediaType === 'image') return 'image';
+    if (mediaType === 'video') return 'videocam';
+    if (mediaType === 'audio') return 'musical-notes';
+    return 'document-text';
+  };
+
+  const getFileColor = (): string => {
+    if (mediaType === 'image') return Colors.dark.accentBlue;
+    if (mediaType === 'video') return Colors.dark.accentGreen;
+    if (mediaType === 'audio') return '#FF6B9D';
+    return Colors.dark.accentCyan;
+  };
 
   return (
     <View style={styles.container}>
@@ -68,7 +195,7 @@ export default function CreatePostScreen() {
           disabled={!canPost}
           testID="submit-post"
         >
-          {postMutation.isPending ? (
+          {postMutation.isPending || uploading ? (
             <ActivityIndicator color="#FFFFFF" size="small" />
           ) : (
             <Text style={[styles.postButtonText, !canPost && styles.postButtonTextDisabled]}>Post</Text>
@@ -96,10 +223,7 @@ export default function CreatePostScreen() {
               <Pressable
                 key={mt.value}
                 style={[styles.mediaTypeBtn, mediaType === mt.value && styles.mediaTypeBtnActive]}
-                onPress={() => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  setMediaType(mt.value);
-                }}
+                onPress={() => handleMediaTypeChange(mt.value)}
               >
                 <Ionicons
                   name={mt.icon as any}
@@ -110,6 +234,42 @@ export default function CreatePostScreen() {
             ))}
           </View>
         </GlassCard>
+
+        {mediaType !== 'text' && (
+          <GlassCard style={styles.optionsCard}>
+            {!selectedFile ? (
+              <Pressable style={styles.pickFileBtn} onPress={handlePickMedia} testID="pick-media-btn">
+                <Ionicons name="cloud-upload-outline" size={28} color={getFileColor()} />
+                <Text style={[styles.pickFileText, { color: getFileColor() }]}>
+                  {mediaType === 'image' ? 'Select Image' :
+                   mediaType === 'video' ? 'Select Video' :
+                   mediaType === 'audio' ? 'Select Audio' : 'Select Document'}
+                </Text>
+                <Text style={styles.pickFileHint}>Tap to browse files</Text>
+              </Pressable>
+            ) : (
+              <View style={styles.filePreview}>
+                {mediaType === 'image' && (
+                  <Image source={{ uri: selectedFile.uri }} style={styles.imagePreview} resizeMode="cover" />
+                )}
+                {mediaType !== 'image' && (
+                  <View style={[styles.fileIcon, { backgroundColor: `${getFileColor()}15` }]}>
+                    <Ionicons name={getFileIcon() as any} size={32} color={getFileColor()} />
+                  </View>
+                )}
+                <View style={styles.fileInfo}>
+                  <Text style={styles.fileName} numberOfLines={1}>{selectedFile.name}</Text>
+                  {selectedFile.size && (
+                    <Text style={styles.fileSize}>{(selectedFile.size / (1024 * 1024)).toFixed(1)} MB</Text>
+                  )}
+                </View>
+                <Pressable onPress={clearFile} style={styles.clearFileBtn}>
+                  <Ionicons name="close-circle" size={24} color={Colors.dark.textMuted} />
+                </Pressable>
+              </View>
+            )}
+          </GlassCard>
+        )}
 
         <GlassCard style={styles.optionsCard}>
           <Text style={styles.optionLabel}>Who can see this?</Text>
@@ -166,4 +326,14 @@ const styles = StyleSheet.create({
   audienceBtnText: { fontSize: 12, fontFamily: 'Inter_500Medium', color: Colors.dark.textMuted },
   audienceBtnTextActive: { color: Colors.dark.accentBlue },
   errorText: { fontSize: 13, fontFamily: 'Inter_400Regular', color: Colors.dark.offlineRed, textAlign: 'center', marginTop: 12 },
+  pickFileBtn: { alignItems: 'center', justifyContent: 'center', paddingVertical: 24, gap: 8, borderWidth: 1, borderColor: Colors.dark.glassBorder, borderRadius: 12, borderStyle: 'dashed' as const },
+  pickFileText: { fontSize: 15, fontFamily: 'Inter_600SemiBold' },
+  pickFileHint: { fontSize: 12, fontFamily: 'Inter_400Regular', color: Colors.dark.textMuted },
+  filePreview: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 4 },
+  imagePreview: { width: 60, height: 60, borderRadius: 10 },
+  fileIcon: { width: 60, height: 60, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  fileInfo: { flex: 1, gap: 2 },
+  fileName: { fontSize: 14, fontFamily: 'Inter_500Medium', color: Colors.dark.text },
+  fileSize: { fontSize: 12, fontFamily: 'Inter_400Regular', color: Colors.dark.textMuted },
+  clearFileBtn: { padding: 4 },
 });

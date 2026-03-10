@@ -27,6 +27,7 @@ import {
   userSettings,
   notifications,
   userEducation,
+  postViews,
 } from "@shared/schema";
 import { db, pool } from "./db";
 import { eq, and, desc, sql, ne, inArray, or, ilike } from "drizzle-orm";
@@ -74,6 +75,7 @@ export interface IStorage {
   deleteEducation(id: string, userId: string): Promise<boolean>;
 
   getUserPosts(userId: string, limit?: number): Promise<any[]>;
+  recordPostView(postId: string, userId: string): Promise<void>;
 
   searchUsers(query: string, currentUserId: string): Promise<any[]>;
   getBuddyIds(userId: string): Promise<string[]>;
@@ -343,6 +345,7 @@ export class DatabaseStorage implements IStorage {
         kindnessEarned: feedPosts.kindnessEarned,
         likesCount: feedPosts.likesCount,
         commentsCount: feedPosts.commentsCount,
+        viewsCount: feedPosts.viewsCount,
         createdAt: feedPosts.createdAt,
       })
       .from(feedPosts)
@@ -362,6 +365,7 @@ export class DatabaseStorage implements IStorage {
       kindnessEarned: p.kindnessEarned,
       likes: p.likesCount,
       comments: p.commentsCount,
+      views: p.viewsCount,
     }));
   }
 
@@ -587,6 +591,17 @@ export class DatabaseStorage implements IStorage {
     return result.length > 0;
   }
 
+  async recordPostView(postId: string, userId: string): Promise<void> {
+    try {
+      await db.insert(postViews).values({ postId, userId });
+      await db
+        .update(feedPosts)
+        .set({ viewsCount: sql`${feedPosts.viewsCount} + 1` })
+        .where(eq(feedPosts.id, postId));
+    } catch {
+    }
+  }
+
   async getUserPosts(userId: string, limit = 20): Promise<any[]> {
     const posts = await db
       .select({
@@ -600,6 +615,7 @@ export class DatabaseStorage implements IStorage {
         kindnessEarned: feedPosts.kindnessEarned,
         likesCount: feedPosts.likesCount,
         commentsCount: feedPosts.commentsCount,
+        viewsCount: feedPosts.viewsCount,
         createdAt: feedPosts.createdAt,
       })
       .from(feedPosts)
@@ -613,6 +629,7 @@ export class DatabaseStorage implements IStorage {
       timestamp: p.createdAt.getTime(),
       likes: p.likesCount,
       comments: p.commentsCount,
+      views: p.viewsCount,
     }));
   }
 
@@ -687,6 +704,7 @@ export class DatabaseStorage implements IStorage {
         kindnessEarned: feedPosts.kindnessEarned,
         likesCount: feedPosts.likesCount,
         commentsCount: feedPosts.commentsCount,
+        viewsCount: feedPosts.viewsCount,
         createdAt: feedPosts.createdAt,
       })
       .from(feedPosts)
@@ -717,6 +735,7 @@ export class DatabaseStorage implements IStorage {
       kindnessEarned: p.kindnessEarned,
       likes: p.likesCount,
       comments: p.commentsCount,
+      views: p.viewsCount,
     }));
   }
 
@@ -735,6 +754,7 @@ export class DatabaseStorage implements IStorage {
         kindnessEarned: feedPosts.kindnessEarned,
         likesCount: feedPosts.likesCount,
         commentsCount: feedPosts.commentsCount,
+        viewsCount: feedPosts.viewsCount,
         createdAt: feedPosts.createdAt,
       })
       .from(feedPosts)
@@ -764,6 +784,7 @@ export class DatabaseStorage implements IStorage {
       kindnessEarned: p.kindnessEarned,
       likes: p.likesCount,
       comments: p.commentsCount,
+      views: p.viewsCount,
     }));
   }
 

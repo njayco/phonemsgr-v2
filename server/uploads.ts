@@ -20,12 +20,13 @@ const diskStorage = multer.diskStorage({
 
 const upload = multer({
   storage: diskStorage,
-  limits: { fileSize: 10 * 1024 * 1024 },
+  limits: { fileSize: 50 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
-    const allowed = /jpeg|jpg|png|gif|webp|mp4|mp3|pdf/;
-    const extname = allowed.test(path.extname(file.originalname).toLowerCase());
-    const mimetype = allowed.test(file.mimetype);
-    if (extname && mimetype) {
+    const allowedExt = /jpeg|jpg|png|gif|webp|mp4|mp3|pdf|ppt|pptx|doc|docx|wav|m4a|mov|avi|key|ogg/;
+    const extOk = allowedExt.test(path.extname(file.originalname).toLowerCase().replace('.', ''));
+    const allowedMime = /image\/|video\/|audio\/|application\/pdf|application\/vnd\.ms-powerpoint|application\/vnd\.openxmlformats|application\/msword/;
+    const mimeOk = allowedMime.test(file.mimetype);
+    if (extOk && mimeOk) {
       return cb(null, true);
     }
     cb(new Error("Invalid file type"));
@@ -43,6 +44,9 @@ export function setupUploadRoutes(app: Express) {
   app.use(
     "/uploads",
     (req, res, next) => {
+      if (!(req.session as any)?.userId) {
+        return res.status(401).json({ message: "Not authenticated" });
+      }
       const filePath = path.join(uploadDir, path.basename(req.path));
       if (fs.existsSync(filePath)) {
         return res.sendFile(filePath);
@@ -73,5 +77,14 @@ export function setupUploadRoutes(app: Express) {
     }
     const url = `/uploads/${req.file.filename}`;
     return res.json({ url });
+  });
+
+  app.get("/api/download/:filename", requireAuth, (req: Request, res: Response) => {
+    const filename = path.basename(req.params.filename);
+    const filePath = path.join(uploadDir, filename);
+    if (fs.existsSync(filePath)) {
+      return res.download(filePath, filename);
+    }
+    res.status(404).json({ message: "File not found" });
   });
 }

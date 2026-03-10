@@ -87,9 +87,10 @@ Key tables in `shared/schema.ts`:
 - `message_threads`, `thread_participants` — messaging threads
 - `messages` — messages with `status` (sent/delivered/read), `isDeleted`, `deliveredAt`, `readAt`, `deletedAt`
 - `notifications` — in-app notifications (type: kindness_award, new_comment, new_message) with isRead flag
-- `feed_posts` — social feed with `audience` column (everyone/buddy/nearby)
+- `feed_posts` — social feed with `audience` column (everyone/buddy/nearby), `viewsCount` for engagement tracking, `mediaUrl` for rich media
 - `feed_comments` — comments with kindnessScore
 - `feed_reactions` — likes with unique constraint per user per post
+- `post_views` — unique view tracking per user per post (postId + userId unique index)
 - `kindness_ledger` — kindness point history with actionType, actorUserId, targetType, targetId
 - `kindness_actions` — tracks cumulative kindness awards per user per target (multiple rows allowed, bounded [-10, +10] per actor per target)
 - `buddy_connections` — friend/buddy relationships (bidirectional, status: pending/accepted)
@@ -104,7 +105,7 @@ All data routes require session authentication (`req.session.userId`).
 **Auth**: POST /api/auth/register, /api/auth/login, /api/auth/logout, GET /api/auth/me (forces isOnline=true)
 **Threads**: GET /api/threads, POST /api/threads, GET /api/threads/:id/messages, POST /api/threads/:id/messages
 **Message Deletion**: DELETE /api/threads/:threadId/messages/:messageId (sender only; marks isDeleted, broadcasts via WS)
-**Feed**: GET /api/feed?type=buddy|nearby, POST /api/feed (with audience), POST /api/feed/:id/like (+5 kindness), POST /api/feed/:id/comment
+**Feed**: GET /api/feed?type=buddy|nearby, POST /api/feed (with audience), POST /api/feed/:id/like (+5 kindness), POST /api/feed/:id/comment, POST /api/feed/:id/view (tracks unique views)
 **Comments**: GET /api/feed/:id/comments
 **Kindness Awards**: POST /api/feed/:id/kindness (±10 on post), POST /api/feed/comments/:id/kindness (±10 on comment, post owner only), GET /api/feed/:id/my-kindness (user's cumulative delta on post), GET /api/feed/comments/:id/my-kindness (user's cumulative delta on comment)
 **Notifications**: GET /api/notifications, POST /api/notifications/:id/read, GET /api/notifications/unread-count
@@ -117,6 +118,7 @@ All data routes require session authentication (`req.session.userId`).
 **Settings**: GET /api/settings, PATCH /api/settings
 **Monetization**: GET /api/monetization, PATCH /api/monetization
 **Upload**: POST /api/upload/avatar, /api/upload/media, /api/upload/attachment
+**Download**: GET /api/download/:filename (forces download with Content-Disposition: attachment)
 
 ## WebSocket Events
 Server-to-client and client-to-server event types:

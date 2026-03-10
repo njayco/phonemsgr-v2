@@ -12,10 +12,11 @@ Phone Msgr combines secure messaging, local social discovery, a kindness economy
 
 ### Key Pillars
 
-- **Messaging & Identity** — Encrypted direct messaging with BEAM send, E2E-ready architecture, and phone-number-based identity
+- **Messaging & Identity** — Instant messaging with optimistic send, WhatsApp-style delivery receipts (✓ ✓✓ blue ✓✓), live keystroke typing preview, and REDACTED message deletion
 - **Live Field Discovery** — Proximity-based radar showing nearby users, shared interests, and distance labels
-- **Phone Feed** — Social content timeline with Buddy and Nearby feeds, media attachments, and kindness rewards
-- **Kindness Economy** — Earn and track kindness points through positive community interactions
+- **Phone Feed** — Social content timeline with Buddy and Nearby feeds, media attachments, kindness rewards, pull-to-refresh, and real-time updates
+- **Kindness Economy** — Earn and track kindness points through positive community interactions with cumulative bounded awards
+- **Notifications** — In-app notification bell + list, push notifications via expo-notifications (native), real-time WebSocket delivery
 - **Monetization Center** — Inbox pricing, paid events, revenue dashboards, and creator tools (Executive tier)
 - **Offline Resilience** — Future mesh networking layer for communication during internet disruption
 
@@ -28,16 +29,16 @@ The app features a premium futuristic dark theme with neon green and blue accent
 | Screen | Description |
 |--------|-------------|
 | **Welcome** | Cinematic onboarding with "Connect. Earn Kindness. Stay Resilient." tagline |
-| **Home Dashboard** | Kindness score, plan status, quick actions, recent activity feed |
+| **Home Dashboard** | Kindness score, plan status, quick actions, notification bell + notifications list |
 | **Live Field** | Radar/proximity map with nearby user avatars and interest chips |
-| **Phone Feed** | Social timeline with video, image, audio, and document post types |
+| **Phone Feed** | Social timeline with video, image, audio, and document post types, pull-to-refresh |
 | **Messages** | Thread list with E2E encryption indicators and online/offline status |
-| **Chat Thread** | Dark futuristic chat with BEAM send button and mesh delivery badges |
+| **Chat Thread** | Optimistic send, delivery receipts (✓ ✓✓ blue ✓✓), live typing preview, REDACTED deletion |
 | **Profile** | Halo avatar, lifetime kindness score, reputation bar, badges, stats |
 | **Monetization** | Revenue chart, inbox pricing controls, event hosting tools |
 | **Pricing** | Three-tier subscription plans (Temp, Associate, Executive) |
 | **Mesh Mode** | Offline resilience simulation with relay status and message queue |
-| **Settings** | Ghost mode, discovery filters, notification and privacy controls |
+| **Settings** | Ghost mode, discovery filters, push notification toggle, privacy controls |
 
 ---
 
@@ -50,16 +51,18 @@ The app features a premium futuristic dark theme with neon green and blue accent
 | **Routing** | Expo Router (file-based routing) |
 | **Database** | PostgreSQL with Drizzle ORM |
 | **Auth** | Express sessions with connect-pg-simple, scrypt password hashing |
-| **Realtime** | WebSocket (ws package) for live message delivery and presence |
+| **Realtime** | WebSocket (ws package) for live message delivery, typing, receipts, kindness events, notifications, presence |
+| **Push Notifications** | expo-notifications (native), Expo Push API (server), in-app fallback (web) |
 | **Server State** | TanStack React Query |
 | **Backend** | Express.js (API + landing page server) |
 | **File Uploads** | Multer (avatars, media, attachments) |
+| **Local Cache** | AsyncStorage with 14-day TTL for messages, threads, and feed posts |
 | **Styling** | React Native StyleSheet with custom dark design system |
 | **Fonts** | Inter (400, 500, 600, 700 weights via @expo-google-fonts) |
 | **Animations** | React Native Reanimated |
 | **Icons** | @expo/vector-icons (Ionicons, MaterialCommunityIcons) |
 | **Haptics** | expo-haptics for tactile feedback |
-| **Location** | expo-location (ready for Live Field discovery) |
+| **Location** | expo-location (native), web geolocation API (web fallback) |
 | **Keyboard** | react-native-keyboard-controller |
 
 ---
@@ -68,42 +71,43 @@ The app features a premium futuristic dark theme with neon green and blue accent
 
 ```
 shared/
-└── schema.ts                # Drizzle ORM schema (15 tables) + Zod validation schemas
+└── schema.ts                # Drizzle ORM schema (17 tables) + Zod validation schemas
 
 server/
 ├── index.ts                 # Express server entry with session middleware + WebSocket setup
-├── routes.ts                # All API routes (auth, threads, messages, feed, settings, etc.)
-├── storage.ts               # DatabaseStorage class (IStorage interface, all CRUD methods)
+├── routes.ts                # All API routes (auth, threads, messages, feed, settings, kindness, notifications, push-token, etc.)
+├── storage.ts               # DatabaseStorage class (IStorage interface, all CRUD methods incl. notifications, push tokens, message status/deletion)
 ├── db.ts                    # Drizzle database connection pool
 ├── auth.ts                  # Password hashing (scrypt) + session auth helpers
-├── websocket.ts             # WebSocket server (user tracking, message broadcast, presence)
+├── websocket.ts             # WebSocket server (user tracking, typing, receipts, message broadcast, kindness/comment events, online/offline presence)
+├── push.ts                  # Push notification service (Expo Push API)
 ├── uploads.ts               # Multer file upload middleware (avatar, media, attachment)
-├── seed.ts                  # Demo data seeding (6 users, threads, messages, posts, buddy connections, presence)
+├── seed.ts                  # Demo data seeding (6 users, threads, messages, posts, comments, buddy connections, presence)
 └── templates/
     └── landing-page.html    # Web landing page
 
 app/
-├── _layout.tsx              # Root layout (Auth, QueryClient, Keyboard providers)
+├── _layout.tsx              # Root layout with providers (Auth, QueryClient, Keyboard) + cache purge on start
 ├── index.tsx                # Welcome / landing screen (redirects if authed)
 ├── sign-in.tsx              # Sign in with username/password (API-backed)
 ├── sign-up.tsx              # Registration with username/password/display name
 ├── +not-found.tsx           # 404 error screen
 ├── new-message.tsx          # New message composer with user search (name/username/phone)
 ├── create-post.tsx          # Create feed post with audience picker (everyone/buddy/nearby)
-├── nearby-list.tsx          # Nearby people list with message/add buddy actions
+├── nearby-list.tsx          # Nearby people list with message/add buddy/remove buddy actions
 ├── pricing.tsx              # Subscription plan selection (modal)
 ├── monetization.tsx         # Revenue center (Executive tier, API-backed)
 ├── offline.tsx              # Mesh mode / offline resilience
-├── settings.tsx             # Privacy, notifications, account settings (API-backed)
+├── settings.tsx             # Privacy, notifications (push toggle), account settings (API-backed)
 ├── chat/
-│   └── [id].tsx             # Individual chat thread with BEAM send (real messages API)
+│   └── [id].tsx             # Chat thread with optimistic send, delivery receipts, live typing preview, REDACTED deletion + local cache
 └── (tabs)/
-    ├── _layout.tsx          # Bottom tab navigation (5 tabs) + WebSocket connect/disconnect
-    ├── index.tsx            # Home dashboard (kindness score, plan, recent activity)
+    ├── _layout.tsx          # Bottom tab navigation (5 tabs) + WebSocket connect/disconnect + notification badge
+    ├── index.tsx            # Home dashboard (kindness score, plan, notification bell + notifications list)
     ├── live-field.tsx       # GPS proximity radar (buddy vs nearby toggle, real location)
-    ├── feed.tsx             # Social feed with buddy/nearby filtering + create post button
-    ├── messages.tsx         # Chat thread list with compose button navigation
-    └── profile.tsx          # User profile with kindness score + badges
+    ├── feed.tsx             # Social feed with buddy/nearby filtering, comments, kindness awards, pull-to-refresh
+    ├── messages.tsx         # Chat thread list with compose button + local cache
+    └── profile.tsx          # User profile with kindness score + badges + sign out
 
 components/
 ├── Avatar.tsx               # Initials-based avatar with optional neon glow
@@ -117,9 +121,11 @@ constants/
 └── colors.ts                # Dark theme color system
 
 lib/
-├── auth-context.tsx         # Server-backed auth provider (React Query, sessions)
-├── websocket.ts             # WebSocket client (connect, disconnect, auto-reconnect)
+├── auth-context.tsx         # Server-backed auth provider (React Query, sessions, graceful sign-out)
+├── websocket.ts             # WebSocket client (connect, disconnect, auto-reconnect, sendTyping, sendMessageRead, onWsEvent/offWsEvent listener system)
 ├── query-client.ts          # React Query client with API base URL + default fetcher
+├── local-cache.ts           # AsyncStorage-based local cache with 14-day TTL
+├── push-notifications.ts    # Push notification registration, permission handling, notification listeners
 └── mock-data.ts             # Legacy demo data (reference only, not imported by screens)
 ```
 
@@ -131,18 +137,20 @@ Key tables in `shared/schema.ts`:
 
 | Table | Purpose |
 |-------|---------|
-| `users` | Profiles with plan tier, kindness score, reputation |
+| `users` | Profiles with plan tier, kindness score, reputation, isOnline, lastSeenAt, pushToken |
 | `user_interests` | User interest tags |
 | `user_badges` | Earned badges (Top Contributor, Verified Helper, etc.) |
 | `message_threads` | Chat threads with encryption flag |
 | `thread_participants` | Thread membership with unread counts |
-| `messages` | Individual messages with mesh delivery flag |
-| `feed_posts` | Social feed posts with media types |
-| `feed_comments` | Comments on posts |
-| `feed_reactions` | Post reactions (likes) |
-| `kindness_ledger` | Kindness point history |
-| `buddy_connections` | Friend/buddy relationships |
-| `nearby_presence` | Location-based discovery data |
+| `messages` | Messages with status (sent/delivered/read), isDeleted, deliveredAt, readAt, deletedAt |
+| `notifications` | In-app notifications (kindness_award, new_comment, new_message) with isRead flag |
+| `feed_posts` | Social feed posts with audience (everyone/buddy/nearby) and kindnessEarned |
+| `feed_comments` | Comments on posts with kindnessScore |
+| `feed_reactions` | Post reactions (likes) with unique constraint per user per post |
+| `kindness_ledger` | Kindness point history with actionType, actorUserId, targetType, targetId |
+| `kindness_actions` | Cumulative kindness awards per user per target (bounded [-10, +10]) |
+| `buddy_connections` | Friend/buddy relationships (bidirectional, status: pending/accepted) |
+| `nearby_presence` | Location-based discovery data (lat/lng/lastSeen) |
 | `events` | Hosted events (monetization) |
 | `monetization_settings` | Inbox pricing and event hosting config |
 | `user_settings` | Privacy and notification preferences |
@@ -159,10 +167,16 @@ All data routes require session authentication (`req.session.userId`).
 | **Auth** | `POST /api/auth/register`, `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/auth/me` |
 | **Profile** | `GET /api/profile/:id`, `PATCH /api/profile` |
 | **Search** | `GET /api/users/search?q=` (searches displayName, username, phone) |
-| **Buddies** | `GET /api/buddies`, `POST /api/buddies/:id` |
+| **Buddies** | `GET /api/buddies`, `POST /api/buddies/:id`, `DELETE /api/buddies/:id` |
 | **Threads** | `GET /api/threads`, `POST /api/threads`, `GET /api/threads/:id/messages`, `POST /api/threads/:id/messages` |
+| **Message Deletion** | `DELETE /api/threads/:threadId/messages/:messageId` (sender only; marks isDeleted, broadcasts via WS) |
 | **Feed** | `GET /api/feed?type=buddy\|nearby`, `POST /api/feed` (with audience), `POST /api/feed/:id/like`, `POST /api/feed/:id/comment` |
-| **Kindness** | `GET /api/kindness/history` |
+| **Comments** | `GET /api/feed/:id/comments` |
+| **Kindness Awards** | `POST /api/feed/:id/kindness` (±10 on post), `POST /api/feed/comments/:id/kindness` (±10 on comment, post owner only) |
+| **Kindness Delta** | `GET /api/feed/:id/my-kindness` (user's cumulative delta on post), `GET /api/feed/comments/:id/my-kindness` (on comment) |
+| **Kindness History** | `GET /api/kindness/history` |
+| **Notifications** | `GET /api/notifications`, `POST /api/notifications/:id/read`, `GET /api/notifications/unread-count` |
+| **Push Token** | `POST /api/push-token` (stores/clears Expo push token) |
 | **Nearby** | `GET /api/nearby?type=buddy\|nearby&radius=400`, `POST /api/nearby/update` |
 | **Settings** | `GET /api/settings`, `PATCH /api/settings` |
 | **Monetization** | `GET /api/monetization`, `PATCH /api/monetization` |
@@ -174,6 +188,26 @@ All data routes require session authentication (`req.session.userId`).
 - Settings/monetization updates use allowlisted field validation
 - Upload routes require authentication
 - Session cookies use `secure: true` in production
+- Kindness award operations use PostgreSQL advisory locks + transactions to prevent race conditions
+
+---
+
+## WebSocket Events
+
+Server-to-client and client-to-server event types:
+
+| Event | Direction | Payload |
+|-------|-----------|---------|
+| `auth` | C→S | `{ userId }` |
+| `typing` | C→S, S→C | `{ threadId, userId, text }` — live keystroke preview |
+| `message_read` | C→S | `{ threadId }` — mark messages as read |
+| `new_message` | S→C | `{ threadId, message }` — new message received |
+| `message_delivered` | S→C | `{ threadId, messageId }` — delivery confirmation |
+| `messages_read` | S→C | `{ threadId, readByUserId }` — read receipt |
+| `message_deleted` | S→C | `{ threadId, messageId }` — message deletion |
+| `kindness_awarded` | S→C | `{ postId, delta, newKindnessScore }` — kindness update |
+| `new_comment` | S→C | `{ postId, comment }` — new comment on post |
+| `new_notification` | S→C | `{ notification }` — in-app notification |
 
 ---
 
@@ -189,7 +223,7 @@ All data routes require session authentication (`req.session.userId`).
 | Accent Green | `#00FF88` | Kindness, resilience, online state, rewards |
 | Accent Cyan | `#00E5FF` | Monetization, revenue, premium features |
 | Warning | `#FFB800` | Upgrades, offline alerts, premium badges |
-| Offline Red | `#FF4444` | Disconnected state, errors |
+| Offline Red | `#FF4444` | Disconnected state, errors, negative kindness |
 | Glass Border | `rgba(255,255,255,0.08)` | Subtle card borders |
 | Glass Background | `rgba(255,255,255,0.04)` | Translucent card fills |
 
@@ -210,6 +244,7 @@ All data routes require session authentication (`req.session.userId`).
 - Scrypt password hashing (Node.js built-in crypto)
 - Session persistence across page reloads
 - Auth guard on protected routes
+- Graceful sign-out (navigate first, cancel in-flight queries)
 - Demo credentials: `alexchen` / `demo1234`
 
 ### Home Dashboard
@@ -218,6 +253,8 @@ All data routes require session authentication (`req.session.userId`).
 - Kindness score preview with heart icon
 - Quick action grid (Messages, Nearby, Revenue, Mesh)
 - Kindness score with reputation progress bar
+- Notification bell with unread count badge
+- Notifications list (kindness awards, comments, messages)
 - Recent activity feed with point badges
 - Monthly revenue card (Executive users)
 
@@ -227,19 +264,20 @@ All data routes require session authentication (`req.session.userId`).
 - E2E encryption indicator chips
 - Online/offline mode chips per contact
 - **New Message Composer** — search users by name, @username, or phone number
-- Chat thread with dark futuristic bubble styling
-- Blue outgoing bubbles, dark glass incoming bubbles
-- **BEAM** button replaces traditional "Send"
-- Timestamps on every message
-- "Delivered via Local Relay" badge for mesh-delivered messages
+- **Optimistic Send** — messages appear instantly with temp ID, replaced on server response
+- **Delivery Receipts** — single gray check (sent), double gray checks (delivered), blue double checks (read)
+- **Live Typing Preview** — other user sees characters typed/backspaced in real-time ghost bubble (throttled 100ms)
+- **Message Deletion** — long-press to delete own messages; shows "REDACTED" with classified stamp
+- **REDACTED Style** — dark red/amber tint, lock icon, "CLASSIFIED" timestamp
 - WebSocket realtime message delivery
 - Messages persist in PostgreSQL
+- Local cache with 14-day TTL
 
 ### User Search & Buddy System
 - Search users by display name, @username, or phone number
 - Debounced search with real-time results
 - Online/offline status indicators on search results
-- Add buddy connections from nearby people list
+- Add/remove buddy connections from nearby people list
 - Bidirectional buddy relationships (both directions stored)
 
 ### Live Field Discovery
@@ -254,28 +292,28 @@ All data routes require session authentication (`req.session.userId`).
 - **Tappable bottom bar** opens full nearby people list
 - Radius indicator (400m default, expandable with premium tiers)
 
-### Nearby People List
-- Full list of nearby users with distance, online status, and interest chips
-- **Message** action — creates or reuses existing chat thread
-- **Add Buddy** action — adds non-buddy users as buddies
-- Separate views for buddies and non-buddies (passed via route params)
-
-### Feed & Content Posting
-- Social feed with buddy/nearby audience filtering
-- **Create Post** screen with audience picker (Everyone, Buddies, Nearby)
-- Content type selector (text, image, video, audio, document)
-- Feed toggles between Buddy List and Nearby 400m views
-- Like and comment interactions with kindness rewards
-
 ### Phone Feed
 - Toggle between Buddy List and Nearby feeds
 - Post types: text, image, video, audio, document
 - Media preview cards with type-specific icons
-- Kindness Earned badges per post (+points)
+- **Kindness display**: Positive → green `+N Kindness`, Negative → red `-N Kindness`, Zero → grey `0 Kindness`
+- **Kindness award buttons** (+10 / -10) on posts by other users; buttons disable at per-user limits
+- **Comment kindness** — post owner can award ±10 on comments; bounded [-10, +10] per user per comment
 - Like/comment/share action row
+- **Pull-to-refresh** on both buddy and nearby feeds
+- Real-time WebSocket updates for kindness awards and new comments
 - Haptic feedback on interactions
 - Glass card styling per post
-- Posts persist in PostgreSQL
+- Posts and comments persist in PostgreSQL
+
+### Notifications
+- In-app notification bell on home screen with unread count badge
+- Notification list with kindness awards, new comments, new messages
+- Mark individual notifications as read
+- Push notifications via expo-notifications (native devices)
+- Push notification permission toggle (starts OFF per Expo guidelines)
+- Server-side push via Expo Push API for messages, kindness, comments
+- Real-time WebSocket delivery of new notifications
 
 ### Profile
 - Neon-bordered halo avatar
@@ -315,9 +353,37 @@ All data routes require session authentication (`req.session.userId`).
 
 ### Settings
 - **Privacy Controls**: Ghost mode, interest-based discovery, mutual filtering, see-everyone (premium)
-- **Notifications**: Push, message alerts, feed updates, kindness points
+- **Notifications**: Push notification toggle, message alerts, feed updates, kindness points
 - **Account**: Subscription management, monetization settings, offline resilience
 - Settings persist in PostgreSQL
+
+---
+
+## Kindness Economy
+
+The kindness economy rewards positive community behavior with bounded, cumulative tracking:
+
+| Action | Points | Rules |
+|--------|--------|-------|
+| Like a post | +5 | One-time per user per post (not on own posts) |
+| Award post kindness | ±10 | Cumulative per user per post, bounded [-10, +10]; not on own posts |
+| Award comment kindness | ±10 | Cumulative per user per comment, bounded [-10, +10]; post owner only |
+
+### How Kindness Awards Work
+
+- Users can press +10 or -10 multiple times on a post or comment
+- Each user's cumulative delta per target is tracked and bounded to [-10, +10]
+- Example: User presses +10 (total: +10), then -10 (total: 0), then -10 again (total: -10) — further -10 is blocked
+- Buttons visually disable at limits; error toast appears when bounds are hit
+- Awards update the target's kindness score and the owner's user kindness score
+- All awards trigger WebSocket events, in-app notifications, and push notifications
+- Atomic operations using PostgreSQL advisory locks + transactions prevent race conditions
+
+### Kindness Display
+
+- **Positive score**: Green badge with `+N Kindness`
+- **Negative score**: Red badge with `-N Kindness`
+- **Zero score**: Grey badge with `0 Kindness`
 
 ---
 
@@ -354,7 +420,7 @@ npm run expo:dev
 | `EXPO_PUBLIC_DOMAIN` | Backend domain for API requests (injected at dev/build time) |
 
 ### Demo Data
-On first startup, the database is seeded with 6 demo users, chat threads, messages, and feed posts. Use `alexchen` / `demo1234` to sign in.
+On first startup, the database is seeded with 6 demo users, chat threads, messages, feed posts, comments, and buddy connections. Use `alexchen` / `demo1234` to sign in.
 
 ### Testing on Device
 1. Install **Expo Go** from the App Store or Google Play
@@ -363,6 +429,15 @@ On first startup, the database is seeded with 6 demo users, chat threads, messag
 
 ### Web Preview
 Open `http://localhost:8081` in your browser for the web version.
+
+---
+
+## Local Cache (14-day TTL)
+
+- `lib/local-cache.ts` provides `cacheSet`, `cacheGet`, `cacheInvalidate`, `cachePurgeExpired`
+- Used in: feed.tsx (feed posts by tab), messages.tsx (thread list), chat/[id].tsx (messages per thread)
+- Cache is purged on app start via `cachePurgeExpired()` in _layout.tsx
+- Shows cached data immediately while API refetch runs in background
 
 ---
 
@@ -385,8 +460,6 @@ The codebase is architected with clean service boundaries for future integration
 - **Emergency broadcast** for disaster scenarios
 - Service interfaces ready at `modules/offline/` level
 
-Phone Msgr is a resilience communication product designed to keep people connected during infrastructure disruptions.
-
 ---
 
 ## Business Model
@@ -398,21 +471,6 @@ Phone Msgr generates revenue through:
 3. **Paid Events** — Event hosting with ticket pricing ($15-$150)
 4. **Utility Fees** — Cable (fax-like utility) at $1.99/send, AirDrop-style transfers
 5. **Offline Resilience Add-on** — $19.99/year for mesh networking and emergency features
-
----
-
-## Kindness Economy
-
-The kindness economy rewards positive community behavior:
-
-| Action | Points |
-|--------|--------|
-| Kind comment | +10 |
-| Like on a kind comment | +10 bonus |
-| Post kindness budget | +100 per post |
-| Harmful comment penalty | -10 (transferred to impacted user) |
-
-> **Note:** Production deployment requires real moderation, abuse detection, and reputation integrity protections before the kindness economy goes live.
 
 ---
 
@@ -432,7 +490,7 @@ The kindness economy rewards positive community behavior:
 - [x] Premium dark futuristic design system
 
 ### Phase 2 — Backend Integration
-- [x] PostgreSQL database with Drizzle ORM (15 tables)
+- [x] PostgreSQL database with Drizzle ORM (17 tables)
 - [x] Session-based authentication with scrypt password hashing
 - [x] All REST API routes with session middleware
 - [x] All frontend screens using React Query with real API data
@@ -451,11 +509,24 @@ The kindness economy rewards positive community behavior:
 ### Phase 4 — Advanced Features
 - [ ] Real E2E encryption with key management
 - [ ] Chat export (.docx, PDF formats)
-- [ ] Push notifications via expo-notifications
 - [ ] Content moderation system
 - [ ] Advanced analytics dashboard
 
-### Phase 5 — Native Offline / Mesh
+### Phase 5 — Realtime & Notifications (Completed)
+- [x] Optimistic send with temp IDs
+- [x] WhatsApp-style delivery receipts (✓ ✓✓ blue ✓✓)
+- [x] Live keystroke typing preview (throttled 100ms)
+- [x] REDACTED message deletion with classified stamp
+- [x] Real-time kindness/comment WebSocket events
+- [x] In-app notification bell + notifications list
+- [x] Push notifications via expo-notifications (native)
+- [x] Expo Push API (server-side)
+- [x] Cumulative kindness awards bounded [-10, +10] with atomic transactions
+- [x] Kindness display colors (green positive, red negative, grey zero)
+- [x] Pull-to-refresh on feed
+- [x] Local cache with 14-day TTL (messages, threads, feed posts)
+
+### Phase 6 — Native Offline / Mesh
 - [ ] Native module for Bluetooth mesh networking
 - [ ] BitChat protocol integration
 - [ ] WiFi Direct peer discovery

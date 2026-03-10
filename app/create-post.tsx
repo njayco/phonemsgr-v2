@@ -7,6 +7,7 @@ import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import { useMutation } from '@tanstack/react-query';
+import { fetch as expoFetch } from 'expo/fetch';
 import { GlassCard } from '@/components/GlassCard';
 import { apiRequest, queryClient, getApiUrl } from '@/lib/query-client';
 import Colors from '@/constants/colors';
@@ -102,7 +103,7 @@ export default function CreatePostScreen() {
     try {
       const formData = new FormData();
       if (Platform.OS === 'web') {
-        const response = await fetch(selectedFile.uri);
+        const response = await globalThis.fetch(selectedFile.uri);
         const blob = await response.blob();
         formData.append('file', blob, selectedFile.name);
       } else {
@@ -114,12 +115,15 @@ export default function CreatePostScreen() {
       }
       const apiUrl = getApiUrl();
       const uploadUrl = new URL('/api/upload/media', apiUrl).toString();
-      const res = await fetch(uploadUrl, {
+      const res = await expoFetch(uploadUrl, {
         method: 'POST',
         body: formData,
         credentials: 'include',
       });
-      if (!res.ok) throw new Error('Upload failed');
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '');
+        throw new Error(`Upload failed: ${res.status} ${errText}`);
+      }
       const data = await res.json();
       return data.url;
     } catch (err) {

@@ -26,6 +26,7 @@ function requireAuth(req: Request, res: Response, next: NextFunction) {
 export async function registerRoutes(app: Express): Promise<Server> {
   const PgStore = connectPgSimple(session);
 
+  const isProduction = process.env.NODE_ENV === "production";
   app.use(
     session({
       store: new PgStore({
@@ -38,8 +39,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       cookie: {
         maxAge: 30 * 24 * 60 * 60 * 1000,
         httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "lax",
+        secure: isProduction,
+        sameSite: isProduction ? "none" as const : "lax" as const,
       },
     }),
   );

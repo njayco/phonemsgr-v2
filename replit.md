@@ -180,6 +180,8 @@ Server-to-client and client-to-server event types:
 
 ## Important Notes
 - After login/signup use `router.replace('/')` NOT `router.replace('/(tabs)')` to avoid NativeStack crash
+- `trust proxy` is set on Express app for Replit's reverse proxy (required for secure cookies in production)
+- Session cookies use `sameSite: "none"` + `secure: true` in production (cross-origin Expo native app requests), `sameSite: "lax"` in development
 - `db:push` requires `--force` flag to avoid interactive prompt
 - WebSocket tracks online/offline presence: sets isOnline true on connect, false when all connections close
 - `/api/auth/me` forces isOnline=true for the requesting user (they are clearly active)

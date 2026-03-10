@@ -24,7 +24,7 @@ const upload = multer({
   fileFilter: (_req, file, cb) => {
     const allowedExt = /jpeg|jpg|png|gif|webp|mp4|mp3|pdf|ppt|pptx|doc|docx|wav|m4a|mov|avi|key|ogg/;
     const extOk = allowedExt.test(path.extname(file.originalname).toLowerCase().replace('.', ''));
-    const allowedMime = /image\/|video\/|audio\/|application\/pdf|application\/vnd\.ms-powerpoint|application\/vnd\.openxmlformats|application\/msword/;
+    const allowedMime = /image\/|video\/|audio\/|application\/pdf|application\/vnd\.ms-powerpoint|application\/vnd\.openxmlformats|application\/msword|application\/vnd\.apple\.keynote/;
     const mimeOk = allowedMime.test(file.mimetype);
     if (extOk && mimeOk) {
       return cb(null, true);

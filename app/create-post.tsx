@@ -74,13 +74,14 @@ export default function CreatePostScreen() {
   const pickDocument = async () => {
     const result = await DocumentPicker.getDocumentAsync({
       type: mediaType === 'audio'
-        ? ['audio/*']
-        : ['application/pdf', 'application/vnd.ms-powerpoint', 'application/vnd.openxmlformats-officedocument.presentationml.presentation', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+        ? ['audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/x-wav', 'audio/mp4', 'audio/x-m4a', 'audio/aac', 'audio/ogg', 'audio/*']
+        : ['application/pdf', 'application/vnd.ms-powerpoint', 'application/vnd.openxmlformats-officedocument.presentationml.presentation', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/vnd.apple.keynote'],
       copyToCacheDirectory: true,
     });
     if (!result.canceled && result.assets && result.assets[0]) {
       const asset = result.assets[0];
-      setSelectedFile({ uri: asset.uri, name: asset.name, type: asset.mimeType || 'application/octet-stream', size: asset.size || undefined });
+      const fallbackMime = mediaType === 'audio' ? 'audio/mpeg' : 'application/pdf';
+      setSelectedFile({ uri: asset.uri, name: asset.name, type: asset.mimeType || fallbackMime, size: asset.size || undefined });
     }
   };
 

@@ -102,7 +102,12 @@ export default function HomeScreen() {
     }
     if (notif.type === 'new_message') {
       setShowNotifs(false);
-      router.push('/(tabs)/messages');
+      if (notif.relatedPostId) {
+        const senderName = notif.body.split(':')[0] || 'Chat';
+        router.push({ pathname: '/chat/[id]', params: { id: notif.relatedPostId, name: senderName } });
+      } else {
+        router.push('/(tabs)/messages');
+      }
     }
   };
 

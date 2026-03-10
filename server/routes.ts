@@ -254,7 +254,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         "new_message",
         "New Message",
         `${senderName}: ${text.length > 50 ? text.slice(0, 50) + '...' : text}`,
-        undefined,
+        threadId,
         userId,
       );
       broadcastToUser(recipientId, { type: "new_notification", notification: notif });

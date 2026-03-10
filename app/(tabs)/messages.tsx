@@ -3,10 +3,12 @@ import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Avatar } from '@/components/Avatar';
 import { cacheGet, cacheSet } from '@/lib/local-cache';
+import { onWsEvent, offWsEvent } from '@/lib/websocket';
+import { queryClient } from '@/lib/query-client';
 import Colors from '@/constants/colors';
 
 interface ChatThread {
@@ -95,6 +97,18 @@ export default function MessagesScreen() {
       cacheSet('threads', threads);
     }
   }, [threads]);
+
+  useEffect(() => {
+    const refreshThreads = () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/threads'] });
+    };
+    onWsEvent('new_message', refreshThreads);
+    onWsEvent('messages_read', refreshThreads);
+    return () => {
+      offWsEvent('new_message', refreshThreads);
+      offWsEvent('messages_read', refreshThreads);
+    };
+  }, []);
 
   const allThreads = threads || cachedThreads || [];
   const filtered = search

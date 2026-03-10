@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { View, Text, ScrollView, StyleSheet, Pressable, Platform, TextInput, ActivityIndicator, Alert, Image } from 'react-native';
+import { View, Text, StyleSheet, Pressable, Platform, TextInput, ActivityIndicator, Alert, Image } from 'react-native';
+import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -181,10 +182,11 @@ export default function EditProfileScreen() {
         </Pressable>
       </View>
 
-      <ScrollView
+      <KeyboardAwareScrollViewCompat
+        style={{ flex: 1 }}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
+        bottomOffset={20}
       >
         <View style={styles.avatarSection}>
           <Pressable onPress={pickImage} style={styles.avatarPressable}>
@@ -412,7 +414,7 @@ export default function EditProfileScreen() {
         )}
 
         <View style={{ height: 80 }} />
-      </ScrollView>
+      </KeyboardAwareScrollViewCompat>
     </View>
   );
 }

@@ -73,6 +73,8 @@ export interface IStorage {
   updateEducation(id: string, userId: string, data: Partial<UserEducation>): Promise<UserEducation | null>;
   deleteEducation(id: string, userId: string): Promise<boolean>;
 
+  getUserPosts(userId: string, limit?: number): Promise<any[]>;
+
   searchUsers(query: string, currentUserId: string): Promise<any[]>;
   getBuddyIds(userId: string): Promise<string[]>;
   addBuddy(userId: string, buddyId: string): Promise<void>;
@@ -583,6 +585,35 @@ export class DatabaseStorage implements IStorage {
       .where(and(eq(userEducation.id, id), eq(userEducation.userId, userId)))
       .returning();
     return result.length > 0;
+  }
+
+  async getUserPosts(userId: string, limit = 20): Promise<any[]> {
+    const posts = await db
+      .select({
+        id: feedPosts.id,
+        userId: feedPosts.userId,
+        username: users.username,
+        avatar: users.avatarUrl,
+        content: feedPosts.content,
+        mediaType: feedPosts.mediaType,
+        mediaUrl: feedPosts.mediaUrl,
+        kindnessEarned: feedPosts.kindnessEarned,
+        likesCount: feedPosts.likesCount,
+        commentsCount: feedPosts.commentsCount,
+        createdAt: feedPosts.createdAt,
+      })
+      .from(feedPosts)
+      .innerJoin(users, eq(feedPosts.userId, users.id))
+      .where(eq(feedPosts.userId, userId))
+      .orderBy(desc(feedPosts.createdAt))
+      .limit(limit);
+
+    return posts.map((p) => ({
+      ...p,
+      timestamp: p.createdAt.getTime(),
+      likes: p.likesCount,
+      comments: p.commentsCount,
+    }));
   }
 
   async searchUsers(query: string, currentUserId: string): Promise<any[]> {

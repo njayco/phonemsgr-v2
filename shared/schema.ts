@@ -40,6 +40,8 @@ export const users = pgTable(
     lastActiveAt: timestamp("last_active_at"),
     occupation: text("occupation").default(""),
     company: text("company").default(""),
+    bio: text("bio").default(""),
+    link: text("link").default(""),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (table) => [

@@ -160,7 +160,7 @@ export default function LiveFieldScreen() {
               const y = Math.sin(rad) * r;
 
               return (
-                <View
+                <Pressable
                   key={u.id}
                   style={[
                     styles.radarUser,
@@ -169,6 +169,7 @@ export default function LiveFieldScreen() {
                       top: RADAR_SIZE / 2 + y - 24,
                     },
                   ]}
+                  onPress={() => router.push(`/profile/${u.id}`)}
                 >
                   <Avatar
                     name={u.displayName || u.username}
@@ -182,7 +183,7 @@ export default function LiveFieldScreen() {
                       <Text style={styles.interestText}>{interest}</Text>
                     </View>
                   ))}
-                </View>
+                </Pressable>
               );
             })}
           </View>

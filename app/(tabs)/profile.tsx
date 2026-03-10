@@ -1,4 +1,4 @@
-import { View, Text, ScrollView, StyleSheet, Pressable, Platform, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, Pressable, Platform, ActivityIndicator, Linking } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -34,6 +34,15 @@ export default function ProfileScreen() {
   const occupation = user.occupation || '';
   const company = user.company || '';
   const education = user.education || [];
+  const bio = user.bio || '';
+  const link = user.link || '';
+
+  const handleLink = () => {
+    if (link) {
+      const url = link.startsWith('http') ? link : `https://${link}`;
+      Linking.openURL(url).catch(() => {});
+    }
+  };
 
   return (
     <View style={styles.container}>
@@ -62,6 +71,17 @@ export default function ProfileScreen() {
             </View>
           ) : null}
         </View>
+
+        {bio ? (
+          <Text style={styles.bioText}>{bio}</Text>
+        ) : null}
+
+        {link ? (
+          <Pressable onPress={handleLink} style={styles.linkRow}>
+            <Ionicons name="link-outline" size={16} color={Colors.dark.accentBlue} />
+            <Text style={styles.linkText} numberOfLines={1}>{link}</Text>
+          </Pressable>
+        ) : null}
 
         <Pressable style={styles.editProfileBtn} onPress={() => router.push('/edit-profile')}>
           <Ionicons name="create-outline" size={16} color={Colors.dark.accentBlue} />
@@ -195,6 +215,9 @@ const styles = StyleSheet.create({
   username: { fontSize: 20, fontFamily: 'Inter_700Bold', color: Colors.dark.text },
   workRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   workText: { fontSize: 13, fontFamily: 'Inter_400Regular', color: Colors.dark.textSecondary },
+  bioText: { fontSize: 14, fontFamily: 'Inter_400Regular', color: Colors.dark.text, textAlign: 'center', lineHeight: 20, paddingHorizontal: 12 },
+  linkRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
+  linkText: { fontSize: 13, fontFamily: 'Inter_500Medium', color: Colors.dark.accentBlue },
   editProfileBtn: {
     flexDirection: 'row',
     alignItems: 'center',

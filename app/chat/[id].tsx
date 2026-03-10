@@ -98,7 +98,7 @@ function TypingBubble({ text, name }: { text: string; name: string }) {
 export default function ChatScreen() {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
-  const { id, name } = useLocalSearchParams<{ id: string; name: string }>();
+  const { id, name, participantId } = useLocalSearchParams<{ id: string; name: string; participantId: string }>();
   const [inputText, setInputText] = useState('');
   const flatListRef = useRef<FlatList>(null);
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
@@ -261,9 +261,13 @@ export default function ChatScreen() {
         <Pressable onPress={() => router.back()} style={styles.backBtn}>
           <Ionicons name="chevron-back" size={24} color={Colors.dark.text} />
         </Pressable>
-        <Avatar name={name || 'User'} size={32} showGlow glowColor={Colors.dark.onlineGreen} />
+        <Pressable onPress={() => participantId && router.push(`/profile/${participantId}`)}>
+          <Avatar name={name || 'User'} size={32} showGlow glowColor={Colors.dark.onlineGreen} />
+        </Pressable>
         <View style={styles.headerInfo}>
-          <Text style={styles.headerName} numberOfLines={1}>{name || 'Chat'}</Text>
+          <Pressable onPress={() => participantId && router.push(`/profile/${participantId}`)}>
+            <Text style={styles.headerName} numberOfLines={1}>{name || 'Chat'}</Text>
+          </Pressable>
           <View style={styles.headerChips}>
             <View style={styles.onlineChip}>
               <View style={styles.onlineDot} />

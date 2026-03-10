@@ -37,16 +37,18 @@ function ChatRow({ thread }: { thread: ChatThread }) {
       style={({ pressed }) => [styles.chatRow, pressed && { opacity: 0.7 }]}
       onPress={() => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        router.push({ pathname: '/chat/[id]', params: { id: thread.id, name: thread.participantName } });
+        router.push({ pathname: '/chat/[id]', params: { id: thread.id, name: thread.participantName, participantId: thread.participantId } });
       }}
       testID={`chat-thread-${thread.id}`}
     >
-      <View style={styles.avatarContainer}>
+      <Pressable style={styles.avatarContainer} onPress={(e) => { e.stopPropagation(); router.push(`/profile/${thread.participantId}`); }}>
         <Avatar name={thread.participantName} size={48} showGlow={thread.isOnline} glowColor={Colors.dark.onlineGreen} />
-      </View>
+      </Pressable>
       <View style={styles.chatInfo}>
         <View style={styles.chatTopRow}>
-          <Text style={styles.chatName} numberOfLines={1}>{thread.participantName}</Text>
+          <Pressable onPress={(e) => { e.stopPropagation(); router.push(`/profile/${thread.participantId}`); }}>
+            <Text style={styles.chatName} numberOfLines={1}>{thread.participantName}</Text>
+          </Pressable>
           <Text style={styles.chatTime}>{timeLabel(thread.lastMessageTime)}</Text>
         </View>
         <View style={styles.chatBottomRow}>

@@ -34,7 +34,8 @@ The app features a premium futuristic dark theme with neon green and blue accent
 | **Phone Feed** | Social timeline with video, image, audio, and document post types, pull-to-refresh |
 | **Messages** | Thread list with E2E encryption indicators and online/offline status |
 | **Chat Thread** | Optimistic send, delivery receipts (✓ ✓✓ blue ✓✓), live typing preview, REDACTED deletion |
-| **Profile** | Halo avatar, lifetime kindness score, reputation bar, badges, stats |
+| **Profile** | Halo avatar, bio (200 char), link, lifetime kindness score, reputation bar, badges, user's posts |
+| **Public Profiles** | View any user's profile by tapping their avatar/name in feed, messages, or live field |
 | **Monetization** | Revenue chart, inbox pricing controls, event hosting tools |
 | **Pricing** | Three-tier subscription plans (Temp, Associate, Executive) |
 | **Mesh Mode** | Offline resilience simulation with relay status and message queue |
@@ -92,6 +93,7 @@ app/
 ├── sign-in.tsx              # Sign in with username/password (API-backed)
 ├── sign-up.tsx              # Registration with username/password/display name
 ├── +not-found.tsx           # 404 error screen
+├── edit-profile.tsx         # Edit profile (photo, bio, link, occupation, company, education CRUD)
 ├── new-message.tsx          # New message composer with user search (name/username/phone)
 ├── create-post.tsx          # Create feed post with audience picker (everyone/buddy/nearby)
 ├── nearby-list.tsx          # Nearby people list with message/add buddy/remove buddy actions
@@ -99,15 +101,18 @@ app/
 ├── monetization.tsx         # Revenue center (Executive tier, API-backed)
 ├── offline.tsx              # Mesh mode / offline resilience
 ├── settings.tsx             # Privacy, notifications (push toggle), account settings (API-backed)
+├── profile/
+│   ├── _layout.tsx          # Profile stack layout
+│   └── [id].tsx             # Public user profile (bio, link, posts, education, badges, message button)
 ├── chat/
 │   └── [id].tsx             # Chat thread with optimistic send, delivery receipts, live typing preview, REDACTED deletion + local cache
 └── (tabs)/
     ├── _layout.tsx          # Bottom tab navigation (5 tabs) + WebSocket connect/disconnect + notification badge
     ├── index.tsx            # Home dashboard (kindness score, plan, notification bell + notifications list)
     ├── live-field.tsx       # GPS proximity radar (buddy vs nearby toggle, real location)
-    ├── feed.tsx             # Social feed with buddy/nearby filtering, comments, kindness awards, pull-to-refresh
-    ├── messages.tsx         # Chat thread list with compose button + local cache
-    └── profile.tsx          # User profile with kindness score + badges + sign out
+    ├── feed.tsx             # Social feed with clickable user avatars/names, buddy/nearby filtering, kindness awards
+    ├── messages.tsx         # Chat thread list with clickable avatars, compose button + local cache
+    └── profile.tsx          # User profile with bio, link, kindness score + badges + sign out
 
 components/
 ├── Avatar.tsx               # Initials-based avatar with optional neon glow
@@ -137,7 +142,7 @@ Key tables in `shared/schema.ts`:
 
 | Table | Purpose |
 |-------|---------|
-| `users` | Profiles with plan tier, kindness score, reputation, isOnline, lastSeenAt, pushToken |
+| `users` | Profiles with plan tier, kindness score, reputation, bio (200 char), link, isOnline, lastSeenAt, pushToken |
 | `user_interests` | User interest tags |
 | `user_badges` | Earned badges (Top Contributor, Verified Helper, etc.) |
 | `message_threads` | Chat threads with encryption flag |
@@ -165,7 +170,7 @@ All data routes require session authentication (`req.session.userId`).
 | Category | Endpoints |
 |----------|-----------|
 | **Auth** | `POST /api/auth/register`, `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/auth/me` |
-| **Profile** | `GET /api/profile/:id`, `PATCH /api/profile` |
+| **Profile** | `GET /api/profile/:id`, `PATCH /api/profile`, `GET /api/profile/:id/posts` |
 | **Search** | `GET /api/users/search?q=` (searches displayName, username, phone) |
 | **Buddies** | `GET /api/buddies`, `POST /api/buddies/:id`, `DELETE /api/buddies/:id` |
 | **Threads** | `GET /api/threads`, `POST /api/threads`, `GET /api/threads/:id/messages`, `POST /api/threads/:id/messages` |
@@ -316,15 +321,26 @@ Server-to-client and client-to-server event types:
 - Real-time WebSocket delivery of new notifications
 
 ### Profile
-- Neon-bordered halo avatar
+- Neon-bordered halo avatar with profile picture
 - @username display
+- **Bio** — 200-character editable bio displayed under username
+- **Link** — tappable URL displayed under bio (opens in browser)
 - Lifetime Kindness Score (large number display)
 - Reputation level progress bar (gradient blue-to-green)
+- Work & Education info (occupation, company, schools)
 - Badge row (Top Contributor, Verified Helper, Community Leader)
 - Connection stats (Connections, Messages, Events)
 - Recent Activity feed with point history
+- Edit Profile button (photo, bio, link, work, education)
 - Upgrade Plan button
 - Sign Out action
+
+### Public User Profiles
+- **Tap any avatar or username** in the feed, messages, live field, or chat header to view that user's profile
+- Full profile view: avatar, bio, link, work/education, kindness score, reputation, badges
+- **User's posts** displayed on their profile with kindness and engagement stats
+- Message button to start a conversation with the user
+- If viewing your own profile, shows edit button instead
 
 ### Monetization Center (Executive Tier)
 - **Inbox Pricing** — Toggle on/off, set price per message from non-contacts
@@ -525,6 +541,17 @@ Phone Msgr generates revenue through:
 - [x] Kindness display colors (green positive, red negative, grey zero)
 - [x] Pull-to-refresh on feed
 - [x] Local cache with 14-day TTL (messages, threads, feed posts)
+
+### Phase 5.5 — Profiles & Social Navigation (Completed)
+- [x] User bio (200 characters) with character counter
+- [x] User link with tappable URL display
+- [x] Profile picture upload with image picker
+- [x] Work (occupation, company) on profile
+- [x] Education CRUD (high school, college, degree, major, graduation year)
+- [x] Public user profiles — tap avatar/name in feed, messages, live field, or chat header
+- [x] User's posts displayed on their profile
+- [x] Message button on other users' profiles
+- [x] Edit button on own profile view
 
 ### Phase 6 — Native Offline / Mesh
 - [ ] Native module for Bluetooth mesh networking

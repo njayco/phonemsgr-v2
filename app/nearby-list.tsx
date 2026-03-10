@@ -32,7 +32,7 @@ function NearbyPersonRow({ person, viewType }: { person: NearbyPerson; viewType:
     onSuccess: (data: { threadId: string }) => {
       router.push({
         pathname: '/chat/[id]',
-        params: { id: data.threadId, name: person.displayName || person.username },
+        params: { id: data.threadId, name: person.displayName || person.username, participantId: person.id },
       });
     },
   });

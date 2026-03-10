@@ -57,7 +57,7 @@ export default function NewMessageScreen() {
       const user = (results || []).find(u => u.id === participantId);
       router.replace({
         pathname: '/chat/[id]',
-        params: { id: data.threadId, name: user?.displayName || 'Chat' },
+        params: { id: data.threadId, name: user?.displayName || 'Chat', participantId: participantId },
       });
     },
   });

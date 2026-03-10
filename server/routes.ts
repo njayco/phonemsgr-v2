@@ -157,7 +157,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/profile", requireAuth, async (req, res) => {
     const userId = req.session.userId!;
-    const allowedFields = ["displayName", "avatarUrl", "phone", "inboxPrice", "occupation", "company"];
+    const allowedFields = ["displayName", "avatarUrl", "phone", "inboxPrice", "occupation", "company", "bio", "link"];
     const updates: any = {};
     for (const field of allowedFields) {
       if (req.body[field] !== undefined) {
@@ -206,6 +206,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return res.status(404).json({ message: "Education entry not found" });
     }
     return res.json({ success: true });
+  });
+
+  app.get("/api/profile/:id/posts", requireAuth, async (req, res) => {
+    const posts = await storage.getUserPosts(req.params.id);
+    return res.json(posts);
   });
 
   app.get("/api/threads", requireAuth, async (req, res) => {

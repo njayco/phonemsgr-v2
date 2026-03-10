@@ -33,6 +33,8 @@ export interface UserProfile {
   phone?: string;
   occupation?: string;
   company?: string;
+  bio?: string;
+  link?: string;
   education?: EducationEntry[];
 }
 

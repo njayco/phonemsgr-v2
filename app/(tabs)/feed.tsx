@@ -94,10 +94,14 @@ function CommentItem({ comment, isPostOwner, onAwardKindness, commentDeltas, com
 
   return (
     <View style={styles.commentRow}>
-      <Avatar name={comment.displayName || comment.username} size={24} />
+      <Pressable onPress={() => router.push(`/profile/${comment.userId}`)}>
+        <Avatar name={comment.displayName || comment.username} size={24} />
+      </Pressable>
       <View style={styles.commentContent}>
         <View style={styles.commentHeader}>
-          <Text style={styles.commentUsername}>{comment.username}</Text>
+          <Pressable onPress={() => router.push(`/profile/${comment.userId}`)}>
+            <Text style={styles.commentUsername}>{comment.username}</Text>
+          </Pressable>
           <Text style={styles.commentTime}>{timeAgo(comment.timestamp)}</Text>
         </View>
         <Text style={styles.commentText}>{comment.text}</Text>
@@ -317,11 +321,13 @@ function FeedPostItem({ post, currentUserId }: { post: FeedPostData; currentUser
   return (
     <GlassCard style={styles.postCard}>
       <View style={styles.postHeader}>
-        <Avatar name={post.username} size={36} showGlow glowColor={Colors.dark.accentBlue} />
-        <View style={styles.postInfo}>
-          <Text style={styles.postUsername}>{post.username}</Text>
-          <Text style={styles.postTime}>{timeAgo(post.timestamp)}</Text>
-        </View>
+        <Pressable onPress={() => router.push(`/profile/${post.userId}`)} style={styles.postAuthorTouchable}>
+          <Avatar name={post.username} size={36} showGlow glowColor={Colors.dark.accentBlue} />
+          <View style={styles.postInfo}>
+            <Text style={styles.postUsername}>{post.username}</Text>
+            <Text style={styles.postTime}>{timeAgo(post.timestamp)}</Text>
+          </View>
+        </Pressable>
       </View>
 
       {post.content ? <Text style={styles.postContent}>{post.content}</Text> : null}
@@ -539,6 +545,7 @@ const styles = StyleSheet.create({
   loadingState: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 80 },
   postCard: { gap: 10 },
   postHeader: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  postAuthorTouchable: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
   postInfo: { flex: 1 },
   postUsername: { fontSize: 14, fontFamily: 'Inter_600SemiBold', color: Colors.dark.text },
   postTime: { fontSize: 11, fontFamily: 'Inter_400Regular', color: Colors.dark.textMuted },

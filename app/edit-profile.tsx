@@ -30,6 +30,8 @@ export default function EditProfileScreen() {
   const [phone, setPhone] = useState(user?.phone || '');
   const [occupation, setOccupation] = useState(user?.occupation || '');
   const [company, setCompany] = useState(user?.company || '');
+  const [bio, setBio] = useState(user?.bio || '');
+  const [link, setLink] = useState(user?.link || '');
   const [avatarUrl, setAvatarUrl] = useState(user?.avatarUrl || '');
   const [uploading, setUploading] = useState(false);
 
@@ -129,6 +131,8 @@ export default function EditProfileScreen() {
         phone,
         occupation,
         company,
+        bio: bio.slice(0, 200),
+        link,
       });
       router.back();
     } catch (e) {
@@ -194,6 +198,34 @@ export default function EditProfileScreen() {
             </View>
           </Pressable>
           <Text style={styles.changePhotoText}>Tap to change photo</Text>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Bio</Text>
+          <View style={styles.fieldGroup}>
+            <TextInput
+              style={[styles.input, { height: 80, textAlignVertical: 'top' }]}
+              value={bio}
+              onChangeText={(t) => setBio(t.slice(0, 200))}
+              placeholder="Tell people about yourself..."
+              placeholderTextColor={Colors.dark.textMuted}
+              multiline
+              maxLength={200}
+            />
+            <Text style={styles.charCount}>{bio.length}/200</Text>
+          </View>
+          <View style={styles.fieldGroup}>
+            <Text style={styles.fieldLabel}>Link</Text>
+            <TextInput
+              style={styles.input}
+              value={link}
+              onChangeText={setLink}
+              placeholder="https://yourwebsite.com"
+              placeholderTextColor={Colors.dark.textMuted}
+              autoCapitalize="none"
+              keyboardType="url"
+            />
+          </View>
         </View>
 
         <View style={styles.section}>
@@ -414,6 +446,7 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 16, fontFamily: 'Inter_600SemiBold', color: Colors.dark.text },
   fieldGroup: { gap: 4 },
   fieldLabel: { fontSize: 12, fontFamily: 'Inter_500Medium', color: Colors.dark.textSecondary },
+  charCount: { fontSize: 11, fontFamily: 'Inter_400Regular', color: Colors.dark.textMuted, textAlign: 'right' as const },
   input: {
     backgroundColor: Colors.dark.inputBackground,
     borderRadius: 12,

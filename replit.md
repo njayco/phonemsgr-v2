@@ -39,7 +39,7 @@ app/
   index.tsx                # Welcome/landing screen (redirects if authed)
   sign-in.tsx              # Sign in with username/password (API-backed)
   sign-up.tsx              # Registration with username/password/display name
-  edit-profile.tsx         # Edit profile (photo, occupation, company, education CRUD)
+  edit-profile.tsx         # Edit profile (photo, bio, link, occupation, company, education CRUD)
   new-message.tsx          # New message composer with user search (name/username/phone)
   create-post.tsx          # Create feed post with audience picker (everyone/buddy/nearby)
   nearby-list.tsx          # Nearby people list with message/add buddy/remove buddy actions
@@ -50,7 +50,10 @@ app/
     live-field.tsx         # GPS proximity radar (buddy vs nearby toggle, real location)
     feed.tsx               # Social feed with buddy/nearby filtering, comments, kindness awards, real-time WS updates
     messages.tsx           # Chat thread list with compose button + local cache
-    profile.tsx            # User profile with kindness score + badges + sign out
+    profile.tsx            # User profile with bio, link, kindness score + badges + sign out
+  profile/
+    _layout.tsx            # Profile stack layout
+    [id].tsx               # Public user profile (bio, link, posts, education, badges, message button)
   chat/[id].tsx            # Chat thread with optimistic send, delivery receipts (✓ ✓✓ blue ✓✓), live typing preview, REDACTED deletion + local cache
   pricing.tsx              # Subscription plans (modal)
   monetization.tsx         # Revenue center for Executive users (API-backed)
@@ -79,7 +82,7 @@ lib/
 
 ## Database Schema (PostgreSQL + Drizzle ORM)
 Key tables in `shared/schema.ts`:
-- `users` — profiles with plan tier, kindness score, reputation, isOnline, lastSeenAt, lastActiveAt, pushToken
+- `users` — profiles with plan tier, kindness score, reputation, bio (200 char), link, isOnline, lastSeenAt, lastActiveAt, pushToken
 - `user_interests`, `user_badges` — user metadata
 - `message_threads`, `thread_participants` — messaging threads
 - `messages` — messages with `status` (sent/delivered/read), `isDeleted`, `deliveredAt`, `readAt`, `deletedAt`
@@ -106,6 +109,7 @@ All data routes require session authentication (`req.session.userId`).
 **Kindness Awards**: POST /api/feed/:id/kindness (±10 on post), POST /api/feed/comments/:id/kindness (±10 on comment, post owner only), GET /api/feed/:id/my-kindness (user's cumulative delta on post), GET /api/feed/comments/:id/my-kindness (user's cumulative delta on comment)
 **Notifications**: GET /api/notifications, POST /api/notifications/:id/read, GET /api/notifications/unread-count
 **Push Token**: POST /api/push-token (stores/clears Expo push token)
+**User Posts**: GET /api/profile/:id/posts (user's feed posts)
 **Search**: GET /api/users/search?q= (searches displayName, username, phone)
 **Buddies**: GET /api/buddies, POST /api/buddies/:id, DELETE /api/buddies/:id
 **Kindness**: GET /api/kindness/history

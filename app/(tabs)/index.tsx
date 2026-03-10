@@ -104,7 +104,7 @@ export default function HomeScreen() {
       setShowNotifs(false);
       if (notif.relatedPostId) {
         const senderName = notif.body.split(':')[0] || 'Chat';
-        router.push({ pathname: '/chat/[id]', params: { id: notif.relatedPostId, name: senderName } });
+        router.push({ pathname: '/chat/[id]', params: { id: notif.relatedPostId, name: senderName, participantId: notif.relatedUserId || '' } });
       } else {
         router.push('/(tabs)/messages');
       }

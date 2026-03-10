@@ -199,9 +199,6 @@ export const kindnessActions = pgTable(
     delta: integer("delta").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
-  (table) => [
-    uniqueIndex("kindness_action_unique").on(table.actorUserId, table.targetType, table.targetId),
-  ],
 );
 
 export const buddyConnections = pgTable(

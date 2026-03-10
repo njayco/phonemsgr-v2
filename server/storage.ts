@@ -26,7 +26,7 @@ import {
   userSettings,
   notifications,
 } from "@shared/schema";
-import { db } from "./db";
+import { db, pool } from "./db";
 import { eq, and, desc, sql, ne, inArray, or, ilike } from "drizzle-orm";
 
 export interface IStorage {
@@ -78,8 +78,9 @@ export interface IStorage {
 
   getPostComments(postId: string): Promise<any[]>;
   awardKindnessForLike(postId: string, likerId: string): Promise<void>;
-  awardPostKindness(postId: string, actorUserId: string, delta: number): Promise<void>;
-  awardCommentKindness(commentId: string, actorUserId: string, delta: number): Promise<void>;
+  getUserKindnessDelta(actorUserId: string, targetType: string, targetId: string): Promise<number>;
+  awardPostKindness(postId: string, actorUserId: string, delta: number): Promise<number>;
+  awardCommentKindness(commentId: string, actorUserId: string, delta: number): Promise<number>;
   getPostOwner(postId: string): Promise<string | null>;
   getCommentOwnerAndPost(commentId: string): Promise<{ userId: string; postId: string } | null>;
 
@@ -771,93 +772,132 @@ export class DatabaseStorage implements IStorage {
     const postOwner = await this.getPostOwner(postId);
     if (!postOwner || postOwner === likerId) return;
 
-    try {
-      await db.insert(kindnessActions).values({
-        actorUserId: likerId,
-        targetType: "post_like",
-        targetId: postId,
-        delta: 5,
-      });
-      await this.addKindnessPoints(likerId, 5, "Liked a post");
-    } catch {
-      // TODO: anti-abuse — duplicate like kindness already awarded
-    }
+    const existing = await this.getUserKindnessDelta(likerId, "post_like", postId);
+    if (existing !== 0) return;
+
+    await db.insert(kindnessActions).values({
+      actorUserId: likerId,
+      targetType: "post_like",
+      targetId: postId,
+      delta: 5,
+    });
+    await this.addKindnessPoints(likerId, 5, "Liked a post");
   }
 
-  async awardPostKindness(postId: string, actorUserId: string, delta: number): Promise<void> {
+  async getUserKindnessDelta(actorUserId: string, targetType: string, targetId: string): Promise<number> {
+    const [result] = await db
+      .select({ total: sql<number>`COALESCE(SUM(${kindnessActions.delta}), 0)::int` })
+      .from(kindnessActions)
+      .where(
+        and(
+          eq(kindnessActions.actorUserId, actorUserId),
+          eq(kindnessActions.targetType, targetType),
+          eq(kindnessActions.targetId, targetId),
+        ),
+      );
+    return result?.total || 0;
+  }
+
+  async awardPostKindness(postId: string, actorUserId: string, delta: number): Promise<number> {
     const postOwner = await this.getPostOwner(postId);
     if (!postOwner) throw new Error("Post not found");
     if (postOwner === actorUserId) throw new Error("Cannot award kindness on own post");
 
+    const client = await pool.connect();
     try {
-      await db.insert(kindnessActions).values({
-        actorUserId,
-        targetType: "post",
-        targetId: postId,
-        delta,
-      });
-    } catch {
-      throw new Error("Already awarded kindness on this post");
+      await client.query("BEGIN");
+
+      await client.query(
+        `SELECT pg_advisory_xact_lock(hashtext($1 || ':post:' || $2))`,
+        [actorUserId, postId],
+      );
+      const sumResult = await client.query(
+        `SELECT COALESCE(SUM(delta), 0)::int AS total FROM kindness_actions WHERE actor_user_id = $1 AND target_type = 'post' AND target_id = $2`,
+        [actorUserId, postId],
+      );
+      const currentDelta = sumResult.rows[0]?.total || 0;
+      const newTotal = currentDelta + delta;
+
+      if (newTotal > 10) { await client.query("ROLLBACK"); throw new Error("Maximum +10 kindness reached on this post"); }
+      if (newTotal < -10) { await client.query("ROLLBACK"); throw new Error("Maximum -10 kindness reached on this post"); }
+
+      await client.query(
+        `INSERT INTO kindness_actions (id, actor_user_id, target_type, target_id, delta, created_at) VALUES (gen_random_uuid(), $1, 'post', $2, $3, NOW())`,
+        [actorUserId, postId, delta],
+      );
+      await client.query(
+        `UPDATE feed_posts SET kindness_earned = kindness_earned + $1 WHERE id = $2`,
+        [delta, postId],
+      );
+      await client.query(
+        `UPDATE users SET kindness_score = kindness_score + $1 WHERE id = $2`,
+        [delta, postOwner],
+      );
+      await client.query(
+        `INSERT INTO kindness_ledger (id, user_id, points, description, action_type, actor_user_id, target_type, target_id, created_at) VALUES (gen_random_uuid(), $1, $2, $3, 'post_kindness', $4, 'post', $5, NOW())`,
+        [postOwner, delta, delta > 0 ? "Received kindness on post" : "Kindness subtracted on post", actorUserId, postId],
+      );
+
+      await client.query("COMMIT");
+      return newTotal;
+    } catch (err) {
+      try { await client.query("ROLLBACK"); } catch {}
+      throw err;
+    } finally {
+      client.release();
     }
-
-    await db
-      .update(feedPosts)
-      .set({ kindnessEarned: sql`${feedPosts.kindnessEarned} + ${delta}` })
-      .where(eq(feedPosts.id, postId));
-
-    await db
-      .update(users)
-      .set({ kindnessScore: sql`${users.kindnessScore} + ${delta}` })
-      .where(eq(users.id, postOwner));
-
-    await db.insert(kindnessLedger).values({
-      userId: postOwner,
-      points: delta,
-      description: delta > 0 ? "Received kindness on post" : "Kindness subtracted on post",
-      actionType: "post_kindness",
-      actorUserId,
-      targetType: "post",
-      targetId: postId,
-    });
   }
 
-  async awardCommentKindness(commentId: string, actorUserId: string, delta: number): Promise<void> {
+  async awardCommentKindness(commentId: string, actorUserId: string, delta: number): Promise<number> {
     const commentInfo = await this.getCommentOwnerAndPost(commentId);
     if (!commentInfo) throw new Error("Comment not found");
 
     const postOwner = await this.getPostOwner(commentInfo.postId);
     if (postOwner !== actorUserId) throw new Error("Only post owner can award kindness on comments");
 
+    const client = await pool.connect();
     try {
-      await db.insert(kindnessActions).values({
-        actorUserId,
-        targetType: "comment",
-        targetId: commentId,
-        delta,
-      });
-    } catch {
-      throw new Error("Already awarded kindness on this comment");
+      await client.query("BEGIN");
+
+      await client.query(
+        `SELECT pg_advisory_xact_lock(hashtext($1 || ':comment:' || $2))`,
+        [actorUserId, commentId],
+      );
+      const sumResult = await client.query(
+        `SELECT COALESCE(SUM(delta), 0)::int AS total FROM kindness_actions WHERE actor_user_id = $1 AND target_type = 'comment' AND target_id = $2`,
+        [actorUserId, commentId],
+      );
+      const currentDelta = sumResult.rows[0]?.total || 0;
+      const newTotal = currentDelta + delta;
+
+      if (newTotal > 10) { await client.query("ROLLBACK"); throw new Error("Maximum +10 kindness reached on this comment"); }
+      if (newTotal < -10) { await client.query("ROLLBACK"); throw new Error("Maximum -10 kindness reached on this comment"); }
+
+      await client.query(
+        `INSERT INTO kindness_actions (id, actor_user_id, target_type, target_id, delta, created_at) VALUES (gen_random_uuid(), $1, 'comment', $2, $3, NOW())`,
+        [actorUserId, commentId, delta],
+      );
+      await client.query(
+        `UPDATE feed_comments SET kindness_score = kindness_score + $1 WHERE id = $2`,
+        [delta, commentId],
+      );
+      await client.query(
+        `UPDATE users SET kindness_score = kindness_score + $1 WHERE id = $2`,
+        [delta, commentInfo.userId],
+      );
+      await client.query(
+        `INSERT INTO kindness_ledger (id, user_id, points, description, action_type, actor_user_id, target_type, target_id, created_at) VALUES (gen_random_uuid(), $1, $2, $3, 'comment_kindness', $4, 'comment', $5, NOW())`,
+        [commentInfo.userId, delta, delta > 0 ? "Received kindness on comment" : "Kindness subtracted on comment", actorUserId, commentId],
+      );
+
+      await client.query("COMMIT");
+      return newTotal;
+    } catch (err) {
+      try { await client.query("ROLLBACK"); } catch {}
+      throw err;
+    } finally {
+      client.release();
     }
-
-    await db
-      .update(feedComments)
-      .set({ kindnessScore: sql`${feedComments.kindnessScore} + ${delta}` })
-      .where(eq(feedComments.id, commentId));
-
-    await db
-      .update(users)
-      .set({ kindnessScore: sql`${users.kindnessScore} + ${delta}` })
-      .where(eq(users.id, commentInfo.userId));
-
-    await db.insert(kindnessLedger).values({
-      userId: commentInfo.userId,
-      points: delta,
-      description: delta > 0 ? "Received kindness on comment" : "Kindness subtracted on comment",
-      actionType: "comment_kindness",
-      actorUserId,
-      targetType: "comment",
-      targetId: commentId,
-    });
   }
 
   async markMessageDelivered(messageId: string): Promise<void> {

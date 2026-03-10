@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { View, Text, FlatList, StyleSheet, Pressable, Platform, ActivityIndicator, TextInput } from 'react-native';
+import { View, Text, FlatList, StyleSheet, Pressable, Platform, ActivityIndicator, TextInput, RefreshControl } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -47,6 +47,24 @@ function timeAgo(ts: number): string {
   return `${Math.floor(diff / 86400000)}d ago`;
 }
 
+function kindnessColor(value: number): string {
+  if (value > 0) return Colors.dark.kindnessGreen;
+  if (value < 0) return Colors.dark.offlineRed;
+  return Colors.dark.textMuted;
+}
+
+function kindnessLabel(value: number): string {
+  if (value > 0) return `+${value} Kindness`;
+  if (value < 0) return `${value} Kindness`;
+  return '0 Kindness';
+}
+
+function kindnessBg(value: number): string {
+  if (value > 0) return Colors.dark.accentGreenDim;
+  if (value < 0) return 'rgba(255,68,68,0.15)';
+  return 'rgba(255,255,255,0.06)';
+}
+
 function MediaPreview({ type }: { type: string }) {
   const iconMap: Record<string, { name: string; color: string; bg: string }> = {
     video: { name: 'play-circle', color: Colors.dark.accentGreen, bg: 'rgba(0,255,136,0.08)' },
@@ -62,11 +80,16 @@ function MediaPreview({ type }: { type: string }) {
   );
 }
 
-function CommentItem({ comment, isPostOwner, onAwardKindness }: {
+function CommentItem({ comment, isPostOwner, onAwardKindness, commentDeltas }: {
   comment: CommentData;
   isPostOwner: boolean;
   onAwardKindness: (commentId: string, delta: number) => void;
+  commentDeltas: Record<string, number>;
 }) {
+  const myDelta = commentDeltas[comment.id] || 0;
+  const atMax = myDelta >= 10;
+  const atMin = myDelta <= -10;
+
   return (
     <View style={styles.commentRow}>
       <Avatar name={comment.displayName || comment.username} size={24} />
@@ -77,31 +100,31 @@ function CommentItem({ comment, isPostOwner, onAwardKindness }: {
         </View>
         <Text style={styles.commentText}>{comment.text}</Text>
         <View style={styles.commentFooter}>
-          {comment.kindnessScore !== 0 && (
-            <View style={styles.commentKindnessBadge}>
-              <Ionicons name="heart" size={10} color={comment.kindnessScore > 0 ? Colors.dark.kindnessGreen : Colors.dark.offlineRed} />
-              <Text style={[styles.commentKindnessText, { color: comment.kindnessScore > 0 ? Colors.dark.kindnessGreen : Colors.dark.offlineRed }]}>
-                {comment.kindnessScore > 0 ? '+' : ''}{comment.kindnessScore}
-              </Text>
-            </View>
-          )}
+          <View style={[styles.commentKindnessBadge, { backgroundColor: kindnessBg(comment.kindnessScore) }]}>
+            <Ionicons name="heart" size={10} color={kindnessColor(comment.kindnessScore)} />
+            <Text style={[styles.commentKindnessText, { color: kindnessColor(comment.kindnessScore) }]}>
+              {kindnessLabel(comment.kindnessScore)}
+            </Text>
+          </View>
           {isPostOwner && (
             <View style={styles.commentKindnessActions}>
               <Pressable
-                style={styles.miniKindnessBtn}
+                style={[styles.miniKindnessBtn, atMax && { opacity: 0.3 }]}
                 onPress={() => {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                   onAwardKindness(comment.id, 10);
                 }}
+                disabled={atMax}
               >
                 <Text style={styles.miniKindnessPlus}>+10</Text>
               </Pressable>
               <Pressable
-                style={styles.miniKindnessBtn}
+                style={[styles.miniKindnessBtn, atMin && { opacity: 0.3 }]}
                 onPress={() => {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                   onAwardKindness(comment.id, -10);
                 }}
+                disabled={atMin}
               >
                 <Text style={styles.miniKindnessMinus}>-10</Text>
               </Pressable>
@@ -118,7 +141,27 @@ function FeedPostItem({ post, currentUserId }: { post: FeedPostData; currentUser
   const [showComments, setShowComments] = useState(false);
   const [commentText, setCommentText] = useState('');
   const [kindnessToast, setKindnessToast] = useState('');
+  const [localKindness, setLocalKindness] = useState(post.kindnessEarned);
+  const [myPostDelta, setMyPostDelta] = useState(0);
+  const [commentDeltas, setCommentDeltas] = useState<Record<string, number>>({});
   const isPostOwner = post.userId === currentUserId;
+
+  useEffect(() => {
+    setLocalKindness(post.kindnessEarned);
+  }, [post.kindnessEarned]);
+
+  useEffect(() => {
+    if (!isPostOwner) {
+      const baseUrl = getApiUrl();
+      const url = new URL(`/api/feed/${post.id}/my-kindness`, baseUrl);
+      fetch(url.toString(), { credentials: 'include' })
+        .then((r) => r.json())
+        .then((data: any) => {
+          if (typeof data.delta === 'number') setMyPostDelta(data.delta);
+        })
+        .catch(() => {});
+    }
+  }, [post.id, isPostOwner]);
 
   const { data: comments } = useQuery<CommentData[]>({
     queryKey: ['/api/feed', post.id, 'comments'],
@@ -131,6 +174,23 @@ function FeedPostItem({ post, currentUserId }: { post: FeedPostData; currentUser
     },
     enabled: showComments,
   });
+
+  useEffect(() => {
+    if (isPostOwner && comments && comments.length > 0) {
+      const baseUrl = getApiUrl();
+      comments.forEach((c) => {
+        const url = new URL(`/api/feed/comments/${c.id}/my-kindness`, baseUrl);
+        fetch(url.toString(), { credentials: 'include' })
+          .then((r) => r.json())
+          .then((data: any) => {
+            if (typeof data.delta === 'number' && data.delta !== 0) {
+              setCommentDeltas((prev) => ({ ...prev, [c.id]: data.delta }));
+            }
+          })
+          .catch(() => {});
+      });
+    }
+  }, [comments, isPostOwner]);
 
   const likeMutation = useMutation({
     mutationFn: async () => {
@@ -159,21 +219,40 @@ function FeedPostItem({ post, currentUserId }: { post: FeedPostData; currentUser
 
   const postKindnessMutation = useMutation({
     mutationFn: async (delta: number) => {
-      await apiRequest('POST', `/api/feed/${post.id}/kindness`, { delta });
+      const res = await apiRequest('POST', `/api/feed/${post.id}/kindness`, { delta });
+      return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (data: any, delta: number) => {
+      setLocalKindness((prev) => prev + delta);
+      if (typeof data.userDelta === 'number') {
+        setMyPostDelta(data.userDelta);
+      }
       queryClient.invalidateQueries({ queryKey: ['/api/feed'] });
       queryClient.invalidateQueries({ queryKey: ['/api/kindness/history'] });
+    },
+    onError: (err: any) => {
+      const msg = err?.message || 'Kindness limit reached';
+      setKindnessToast(msg);
+      setTimeout(() => setKindnessToast(''), 2500);
     },
   });
 
   const commentKindnessMutation = useMutation({
     mutationFn: async ({ commentId, delta }: { commentId: string; delta: number }) => {
-      await apiRequest('POST', `/api/feed/comments/${commentId}/kindness`, { delta });
+      const res = await apiRequest('POST', `/api/feed/comments/${commentId}/kindness`, { delta });
+      return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (data: any, variables: { commentId: string; delta: number }) => {
+      if (typeof data.userDelta === 'number') {
+        setCommentDeltas((prev) => ({ ...prev, [variables.commentId]: data.userDelta }));
+      }
       queryClient.invalidateQueries({ queryKey: ['/api/feed', post.id, 'comments'] });
       queryClient.invalidateQueries({ queryKey: ['/api/kindness/history'] });
+    },
+    onError: (err: any) => {
+      const msg = err?.message || 'Kindness limit reached';
+      setKindnessToast(msg);
+      setTimeout(() => setKindnessToast(''), 2500);
     },
   });
 
@@ -196,6 +275,8 @@ function FeedPostItem({ post, currentUserId }: { post: FeedPostData; currentUser
   };
 
   const commentsList = comments || [];
+  const postAtMax = myPostDelta >= 10;
+  const postAtMin = myPostDelta <= -10;
 
   return (
     <GlassCard style={styles.postCard}>
@@ -212,29 +293,29 @@ function FeedPostItem({ post, currentUserId }: { post: FeedPostData; currentUser
       {post.mediaType !== 'text' && <MediaPreview type={post.mediaType} />}
 
       <View style={styles.postFooter}>
-        <View style={styles.kindnessEarned}>
-          <Ionicons name="heart" size={14} color={Colors.dark.kindnessGreen} />
-          <Text style={styles.kindnessText}>+{post.kindnessEarned} Kindness</Text>
+        <View style={[styles.kindnessEarned, { backgroundColor: kindnessBg(localKindness) }]}>
+          <Ionicons name="heart" size={14} color={kindnessColor(localKindness)} />
+          <Text style={[styles.kindnessText, { color: kindnessColor(localKindness) }]}>{kindnessLabel(localKindness)}</Text>
         </View>
         {!isPostOwner && (
           <View style={styles.kindnessAwardRow}>
             <Pressable
-              style={styles.kindnessAwardBtn}
+              style={[styles.kindnessAwardBtn, postAtMax && { opacity: 0.3 }]}
               onPress={() => {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 postKindnessMutation.mutate(10);
               }}
-              disabled={postKindnessMutation.isPending || postKindnessMutation.isSuccess}
+              disabled={postKindnessMutation.isPending || postAtMax}
             >
               <Text style={styles.kindnessAwardPlus}>+10</Text>
             </Pressable>
             <Pressable
-              style={styles.kindnessAwardBtn}
+              style={[styles.kindnessAwardBtn, postAtMin && { opacity: 0.3 }]}
               onPress={() => {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 postKindnessMutation.mutate(-10);
               }}
-              disabled={postKindnessMutation.isPending || postKindnessMutation.isSuccess}
+              disabled={postKindnessMutation.isPending || postAtMin}
             >
               <Text style={styles.kindnessAwardMinus}>-10</Text>
             </Pressable>
@@ -269,6 +350,7 @@ function FeedPostItem({ post, currentUserId }: { post: FeedPostData; currentUser
               comment={c}
               isPostOwner={isPostOwner}
               onAwardKindness={handleCommentKindness}
+              commentDeltas={commentDeltas}
             />
           ))}
           <View style={styles.commentInputRow}>
@@ -304,7 +386,7 @@ export default function FeedScreen() {
 
   const cacheKey = `feed_${feedTab}`;
 
-  const { data: posts, isLoading } = useQuery<FeedPostData[]>({
+  const { data: posts, isLoading, isFetching, refetch } = useQuery<FeedPostData[]>({
     queryKey: ['/api/feed', feedTab],
     queryFn: async () => {
       const baseUrl = getApiUrl();
@@ -322,12 +404,20 @@ export default function FeedScreen() {
   });
 
   const [cachedPosts, setCachedPosts] = useState<FeedPostData[] | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     cacheGet<FeedPostData[]>(cacheKey).then((cached) => {
       if (cached) setCachedPosts(cached);
     });
   }, [cacheKey]);
+
+  const handleRefresh = useCallback(() => {
+    setRefreshing(true);
+    refetch().finally(() => {
+      setRefreshing(false);
+    });
+  }, [refetch]);
 
   const feedPosts = posts || cachedPosts || [];
   const currentUserId = user?.id || '';
@@ -378,6 +468,14 @@ export default function FeedScreen() {
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
           scrollEnabled={feedPosts.length > 0}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+              tintColor={Colors.dark.accentBlue}
+              colors={[Colors.dark.accentBlue]}
+            />
+          }
           ListEmptyComponent={
             <View style={styles.emptyState}>
               <Ionicons name="newspaper-outline" size={48} color={Colors.dark.textMuted} />
@@ -410,8 +508,8 @@ const styles = StyleSheet.create({
   postContent: { fontSize: 14, fontFamily: 'Inter_400Regular', color: Colors.dark.text, lineHeight: 20 },
   mediaPreview: { height: 120, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   postFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  kindnessEarned: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: Colors.dark.accentGreenDim, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 },
-  kindnessText: { fontSize: 12, fontFamily: 'Inter_600SemiBold', color: Colors.dark.kindnessGreen },
+  kindnessEarned: { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 },
+  kindnessText: { fontSize: 12, fontFamily: 'Inter_600SemiBold' },
   kindnessAwardRow: { flexDirection: 'row', gap: 6 },
   kindnessAwardBtn: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, backgroundColor: Colors.dark.surfaceElevated },
   kindnessAwardPlus: { fontSize: 12, fontFamily: 'Inter_600SemiBold', color: Colors.dark.accentGreen },
@@ -429,7 +527,7 @@ const styles = StyleSheet.create({
   commentTime: { fontSize: 10, fontFamily: 'Inter_400Regular', color: Colors.dark.textMuted },
   commentText: { fontSize: 13, fontFamily: 'Inter_400Regular', color: Colors.dark.text, lineHeight: 18 },
   commentFooter: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 2 },
-  commentKindnessBadge: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  commentKindnessBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, borderRadius: 4, paddingHorizontal: 4, paddingVertical: 1 },
   commentKindnessText: { fontSize: 10, fontFamily: 'Inter_600SemiBold' },
   commentKindnessActions: { flexDirection: 'row', gap: 4 },
   miniKindnessBtn: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, backgroundColor: Colors.dark.surfaceElevated },

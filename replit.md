@@ -87,7 +87,7 @@ Key tables in `shared/schema.ts`:
 - `feed_comments` — comments with kindnessScore
 - `feed_reactions` — likes with unique constraint per user per post
 - `kindness_ledger` — kindness point history with actionType, actorUserId, targetType, targetId
-- `kindness_actions` — tracks unique kindness awards per user per target (dedup)
+- `kindness_actions` — tracks cumulative kindness awards per user per target (multiple rows allowed, bounded [-10, +10] per actor per target)
 - `buddy_connections` — friend/buddy relationships (bidirectional, status: pending/accepted)
 - `nearby_presence` — location-based discovery (lat/lng/lastSeen)
 - `events` — hosted events (monetization)
@@ -102,7 +102,7 @@ All data routes require session authentication (`req.session.userId`).
 **Message Deletion**: DELETE /api/threads/:threadId/messages/:messageId (sender only; marks isDeleted, broadcasts via WS)
 **Feed**: GET /api/feed?type=buddy|nearby, POST /api/feed (with audience), POST /api/feed/:id/like (+5 kindness), POST /api/feed/:id/comment
 **Comments**: GET /api/feed/:id/comments
-**Kindness Awards**: POST /api/feed/:id/kindness (±10 on post), POST /api/feed/comments/:id/kindness (±10 on comment, post owner only)
+**Kindness Awards**: POST /api/feed/:id/kindness (±10 on post), POST /api/feed/comments/:id/kindness (±10 on comment, post owner only), GET /api/feed/:id/my-kindness (user's cumulative delta on post), GET /api/feed/comments/:id/my-kindness (user's cumulative delta on comment)
 **Notifications**: GET /api/notifications, POST /api/notifications/:id/read, GET /api/notifications/unread-count
 **Push Token**: POST /api/push-token (stores/clears Expo push token)
 **Search**: GET /api/users/search?q= (searches displayName, username, phone)
@@ -142,9 +142,11 @@ Server-to-client and client-to-server event types:
 
 ## Kindness Economy
 - **Like a post**: Liker earns +5 kindness (one-time per post, not on own posts)
-- **Award post kindness**: Any user can +10 or -10 on a post (one-time per user per post, not on own posts); updates post's kindnessEarned and post owner's kindnessScore; triggers WS event + notification + push
-- **Award comment kindness**: Only post owner can +10 or -10 on comments on their post (one-time per comment); updates comment's kindnessScore and commenter's kindnessScore; triggers notification + push
-- Duplicate prevention via `kindness_actions` unique constraint on (actorUserId, targetType, targetId)
+- **Award post kindness**: Any user can +10 or -10 on a post (not on own posts); cumulative delta per user per post bounded to [-10, +10]; e.g. user can +10 then -10 (back to 0) then -10 again (to -10); buttons disable at limits; updates post's kindnessEarned and post owner's kindnessScore; triggers WS event + notification + push
+- **Award comment kindness**: Only post owner can +10 or -10 on comments on their post; cumulative delta per user per comment bounded to [-10, +10]; updates comment's kindnessScore and commenter's kindnessScore; triggers notification + push
+- **Kindness display**: Positive → green `+N Kindness`, Negative → red `-N Kindness`, Zero → grey `0 Kindness`
+- **Pull-to-refresh**: Feed supports pull-down-to-refresh for both buddy and nearby tabs
+- Cumulative tracking via `kindness_actions` table (multiple rows per user per target, SUM checked against bounds)
 
 ## Local Cache (14-day TTL)
 - `lib/local-cache.ts` provides `cacheSet`, `cacheGet`, `cacheInvalidate`, `cachePurgeExpired`

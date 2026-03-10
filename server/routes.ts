@@ -408,7 +408,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const userId = req.session.userId!;
       const postId = req.params.id;
-      await storage.awardPostKindness(postId, userId, delta);
+      const userDelta = await storage.awardPostKindness(postId, userId, delta);
 
       const postOwner = await storage.getPostOwner(postId);
       if (postOwner) {
@@ -441,10 +441,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ).catch(() => {});
       }
 
-      return res.json({ success: true, delta });
+      return res.json({ success: true, delta, userDelta });
     } catch (err: any) {
       return res.status(400).json({ message: err.message });
     }
+  });
+
+  app.get("/api/feed/:id/my-kindness", requireAuth, async (req, res) => {
+    const userId = req.session.userId!;
+    const delta = await storage.getUserKindnessDelta(userId, "post", req.params.id);
+    return res.json({ delta });
   });
 
   app.post("/api/feed/comments/:id/kindness", requireAuth, async (req, res) => {
@@ -455,7 +461,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const userId = req.session.userId!;
       const commentId = req.params.id;
-      await storage.awardCommentKindness(commentId, userId, delta);
+      const userDelta = await storage.awardCommentKindness(commentId, userId, delta);
 
       const commentInfo = await storage.getCommentOwnerAndPost(commentId);
       if (commentInfo) {
@@ -477,10 +483,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ).catch(() => {});
       }
 
-      return res.json({ success: true, delta });
+      return res.json({ success: true, delta, userDelta });
     } catch (err: any) {
       return res.status(400).json({ message: err.message });
     }
+  });
+
+  app.get("/api/feed/comments/:id/my-kindness", requireAuth, async (req, res) => {
+    const userId = req.session.userId!;
+    const delta = await storage.getUserKindnessDelta(userId, "comment", req.params.id);
+    return res.json({ delta });
   });
 
   app.get("/api/kindness/history", requireAuth, async (req, res) => {

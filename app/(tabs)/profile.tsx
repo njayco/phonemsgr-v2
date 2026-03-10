@@ -125,7 +125,7 @@ export default function ProfileScreen() {
             <MaterialCommunityIcons name="crown" size={18} color={Colors.dark.warning} />
             <Text style={styles.upgradeText}>Upgrade Plan</Text>
           </Pressable>
-          <Pressable style={styles.signOutButton} onPress={async () => { await signOut(); router.replace('/'); }}>
+          <Pressable style={styles.signOutButton} onPress={async () => { try { await signOut(); } catch {} }}>
             <Text style={styles.signOutText}>Sign Out</Text>
           </Pressable>
         </View>

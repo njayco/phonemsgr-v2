@@ -35,6 +35,8 @@ export const users = pgTable(
     messagesCount: integer("messages_count").notNull().default(0),
     eventsCount: integer("events_count").notNull().default(0),
     createdAt: timestamp("created_at").defaultNow().notNull(),
+    lastSeenAt: timestamp("last_seen_at"),
+    lastActiveAt: timestamp("last_active_at"),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (table) => [
@@ -139,6 +141,7 @@ export const feedComments = pgTable("feed_comments", {
     .references(() => users.id, { onDelete: "cascade" }),
   text: text("text").notNull(),
   isKind: boolean("is_kind").notNull().default(true),
+  kindnessScore: integer("kindness_score").notNull().default(0),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -169,8 +172,31 @@ export const kindnessLedger = pgTable("kindness_ledger", {
     .references(() => users.id, { onDelete: "cascade" }),
   points: integer("points").notNull(),
   description: text("description").notNull(),
+  actionType: text("action_type").default("manual"),
+  actorUserId: varchar("actor_user_id", { length: 36 }),
+  targetType: text("target_type"),
+  targetId: varchar("target_id", { length: 36 }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+
+export const kindnessActions = pgTable(
+  "kindness_actions",
+  {
+    id: varchar("id", { length: 36 })
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    actorUserId: varchar("actor_user_id", { length: 36 })
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    targetType: text("target_type").notNull(),
+    targetId: varchar("target_id", { length: 36 }).notNull(),
+    delta: integer("delta").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("kindness_action_unique").on(table.actorUserId, table.targetType, table.targetId),
+  ],
+);
 
 export const buddyConnections = pgTable(
   "buddy_connections",
@@ -267,6 +293,8 @@ export type User = typeof users.$inferSelect;
 export type MessageThread = typeof messageThreads.$inferSelect;
 export type Message = typeof messages.$inferSelect;
 export type FeedPost = typeof feedPosts.$inferSelect;
+export type FeedComment = typeof feedComments.$inferSelect;
 export type KindnessEntry = typeof kindnessLedger.$inferSelect;
+export type KindnessAction = typeof kindnessActions.$inferSelect;
 export type UserSettings = typeof userSettings.$inferSelect;
 export type MonetizationSettings = typeof monetizationSettings.$inferSelect;

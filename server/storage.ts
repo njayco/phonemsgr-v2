@@ -3,6 +3,7 @@ import {
   type InsertUser,
   type Message,
   type FeedPost,
+  type FeedComment,
   type KindnessEntry,
   type UserSettings,
   type MonetizationSettings,
@@ -16,6 +17,7 @@ import {
   feedComments,
   feedReactions,
   kindnessLedger,
+  kindnessActions,
   buddyConnections,
   nearbyPresence,
   events,
@@ -65,11 +67,19 @@ export interface IStorage {
   searchUsers(query: string, currentUserId: string): Promise<any[]>;
   getBuddyIds(userId: string): Promise<string[]>;
   addBuddy(userId: string, buddyId: string): Promise<void>;
+  removeBuddy(userId: string, buddyId: string): Promise<void>;
   getBuddyFeedPosts(userId: string, buddyIds: string[]): Promise<any[]>;
   getNearbyFeedPosts(nearbyUserIds: string[]): Promise<any[]>;
   getNearbyBuddies(userId: string, radiusMeters: number): Promise<any[]>;
   getNearbyNonBuddies(userId: string, radiusMeters: number): Promise<any[]>;
   setUserOnline(userId: string, online: boolean): Promise<void>;
+
+  getPostComments(postId: string): Promise<any[]>;
+  awardKindnessForLike(postId: string, likerId: string): Promise<void>;
+  awardPostKindness(postId: string, actorUserId: string, delta: number): Promise<void>;
+  awardCommentKindness(commentId: string, actorUserId: string, delta: number): Promise<void>;
+  getPostOwner(postId: string): Promise<string | null>;
+  getCommentOwnerAndPost(commentId: string): Promise<{ userId: string; postId: string } | null>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -643,7 +653,168 @@ export class DatabaseStorage implements IStorage {
   }
 
   async setUserOnline(userId: string, online: boolean): Promise<void> {
-    await db.update(users).set({ isOnline: online }).where(eq(users.id, userId));
+    const updates: any = { isOnline: online };
+    if (online) {
+      updates.lastSeenAt = new Date();
+    }
+    await db.update(users).set(updates).where(eq(users.id, userId));
+  }
+
+  async removeBuddy(userId: string, buddyId: string): Promise<void> {
+    await db.delete(buddyConnections).where(
+      or(
+        and(
+          eq(buddyConnections.userId, userId),
+          eq(buddyConnections.buddyId, buddyId),
+          eq(buddyConnections.status, "accepted"),
+        ),
+        and(
+          eq(buddyConnections.userId, buddyId),
+          eq(buddyConnections.buddyId, userId),
+          eq(buddyConnections.status, "accepted"),
+        ),
+      ),
+    );
+  }
+
+  async getPostComments(postId: string): Promise<any[]> {
+    const rows = await db
+      .select({
+        id: feedComments.id,
+        postId: feedComments.postId,
+        userId: feedComments.userId,
+        text: feedComments.text,
+        kindnessScore: feedComments.kindnessScore,
+        createdAt: feedComments.createdAt,
+        username: users.username,
+        displayName: users.displayName,
+        avatar: users.avatarUrl,
+      })
+      .from(feedComments)
+      .innerJoin(users, eq(feedComments.userId, users.id))
+      .where(eq(feedComments.postId, postId))
+      .orderBy(desc(feedComments.createdAt));
+
+    return rows.map((r) => ({
+      id: r.id,
+      postId: r.postId,
+      userId: r.userId,
+      text: r.text,
+      kindnessScore: r.kindnessScore,
+      username: r.username,
+      displayName: r.displayName,
+      avatar: r.avatar || "",
+      timestamp: r.createdAt.getTime(),
+    }));
+  }
+
+  async getPostOwner(postId: string): Promise<string | null> {
+    const [post] = await db
+      .select({ userId: feedPosts.userId })
+      .from(feedPosts)
+      .where(eq(feedPosts.id, postId));
+    return post?.userId || null;
+  }
+
+  async getCommentOwnerAndPost(commentId: string): Promise<{ userId: string; postId: string } | null> {
+    const [comment] = await db
+      .select({ userId: feedComments.userId, postId: feedComments.postId })
+      .from(feedComments)
+      .where(eq(feedComments.id, commentId));
+    return comment || null;
+  }
+
+  async awardKindnessForLike(postId: string, likerId: string): Promise<void> {
+    const postOwner = await this.getPostOwner(postId);
+    if (!postOwner || postOwner === likerId) return;
+
+    try {
+      await db.insert(kindnessActions).values({
+        actorUserId: likerId,
+        targetType: "post_like",
+        targetId: postId,
+        delta: 5,
+      });
+      await this.addKindnessPoints(likerId, 5, "Liked a post");
+    } catch {
+      // TODO: anti-abuse — duplicate like kindness already awarded
+    }
+  }
+
+  async awardPostKindness(postId: string, actorUserId: string, delta: number): Promise<void> {
+    const postOwner = await this.getPostOwner(postId);
+    if (!postOwner) throw new Error("Post not found");
+    if (postOwner === actorUserId) throw new Error("Cannot award kindness on own post");
+
+    try {
+      await db.insert(kindnessActions).values({
+        actorUserId,
+        targetType: "post",
+        targetId: postId,
+        delta,
+      });
+    } catch {
+      throw new Error("Already awarded kindness on this post");
+    }
+
+    await db
+      .update(feedPosts)
+      .set({ kindnessEarned: sql`${feedPosts.kindnessEarned} + ${delta}` })
+      .where(eq(feedPosts.id, postId));
+
+    await db
+      .update(users)
+      .set({ kindnessScore: sql`${users.kindnessScore} + ${delta}` })
+      .where(eq(users.id, postOwner));
+
+    await db.insert(kindnessLedger).values({
+      userId: postOwner,
+      points: delta,
+      description: delta > 0 ? "Received kindness on post" : "Kindness subtracted on post",
+      actionType: "post_kindness",
+      actorUserId,
+      targetType: "post",
+      targetId: postId,
+    });
+  }
+
+  async awardCommentKindness(commentId: string, actorUserId: string, delta: number): Promise<void> {
+    const commentInfo = await this.getCommentOwnerAndPost(commentId);
+    if (!commentInfo) throw new Error("Comment not found");
+
+    const postOwner = await this.getPostOwner(commentInfo.postId);
+    if (postOwner !== actorUserId) throw new Error("Only post owner can award kindness on comments");
+
+    try {
+      await db.insert(kindnessActions).values({
+        actorUserId,
+        targetType: "comment",
+        targetId: commentId,
+        delta,
+      });
+    } catch {
+      throw new Error("Already awarded kindness on this comment");
+    }
+
+    await db
+      .update(feedComments)
+      .set({ kindnessScore: sql`${feedComments.kindnessScore} + ${delta}` })
+      .where(eq(feedComments.id, commentId));
+
+    await db
+      .update(users)
+      .set({ kindnessScore: sql`${users.kindnessScore} + ${delta}` })
+      .where(eq(users.id, commentInfo.userId));
+
+    await db.insert(kindnessLedger).values({
+      userId: commentInfo.userId,
+      points: delta,
+      description: delta > 0 ? "Received kindness on comment" : "Kindness subtracted on comment",
+      actionType: "comment_kindness",
+      actorUserId,
+      targetType: "comment",
+      targetId: commentId,
+    });
   }
 }
 

@@ -7,6 +7,7 @@ import {
   threadParticipants,
   messages,
   feedPosts,
+  feedComments,
   kindnessLedger,
   nearbyPresence,
   buddyConnections,
@@ -213,14 +214,27 @@ export async function seedDatabase() {
     { userId: "user-2", content: "Just finished the networking workshop. Incredible insights from everyone!", mediaType: "text", audience: "everyone", kindnessEarned: 45, likesCount: 18, commentsCount: 6, createdAt: new Date(now - 5400000) },
   ];
 
-  await db.insert(feedPosts).values(seedPosts);
+  const insertedPosts = await db.insert(feedPosts).values(seedPosts).returning();
+
+  const sampleComments = [
+    { postId: insertedPosts[0].id, userId: "user-1", text: "Amazing livestream! Learned so much.", createdAt: new Date(now - 60000) },
+    { postId: insertedPosts[0].id, userId: "user-2", text: "Thanks for sharing this!", createdAt: new Date(now - 50000) },
+    { postId: insertedPosts[1].id, userId: "user-1", text: "Beautiful work Mia!", createdAt: new Date(now - 800000) },
+    { postId: insertedPosts[2].id, userId: "user-5", text: "Can't wait to hear it!", createdAt: new Date(now - 3500000) },
+    { postId: insertedPosts[4].id, userId: "user-2", text: "Looks so peaceful!", createdAt: new Date(now - 1700000) },
+    { postId: insertedPosts[4].id, userId: "user-3", text: "Love it! Great morning energy.", createdAt: new Date(now - 1600000) },
+    { postId: insertedPosts[5].id, userId: "user-1", text: "Great insights Barbara!", createdAt: new Date(now - 5000000) },
+  ];
+
+  await db.insert(feedComments).values(sampleComments);
 
   const activityEntries = [
-    { userId: "user-1", points: 15, description: "Kindness Point for helping neighbor", createdAt: new Date(now - 7200000) },
-    { userId: "user-1", points: 40, description: "Community Event Contribution", createdAt: new Date(now - 86400000) },
-    { userId: "user-1", points: 8, description: "Shared Resources", createdAt: new Date(now - 259200000) },
-    { userId: "user-1", points: 25, description: "Kind Comment Bonus", createdAt: new Date(now - 345600000) },
-    { userId: "user-1", points: 100, description: "Event Host Reward", createdAt: new Date(now - 604800000) },
+    { userId: "user-1", points: 15, description: "Kindness Point for helping neighbor", actionType: "manual" as const, createdAt: new Date(now - 7200000) },
+    { userId: "user-1", points: 40, description: "Community Event Contribution", actionType: "manual" as const, createdAt: new Date(now - 86400000) },
+    { userId: "user-1", points: 5, description: "Liked a post", actionType: "post_like" as const, actorUserId: "user-1", targetType: "post" as const, targetId: insertedPosts[0].id, createdAt: new Date(now - 100000) },
+    { userId: "user-6", points: 10, description: "Received kindness on post", actionType: "post_kindness" as const, actorUserId: "user-2", targetType: "post" as const, targetId: insertedPosts[0].id, createdAt: new Date(now - 90000) },
+    { userId: "user-1", points: 25, description: "Kind Comment Bonus", actionType: "manual" as const, createdAt: new Date(now - 345600000) },
+    { userId: "user-1", points: 100, description: "Event Host Reward", actionType: "manual" as const, createdAt: new Date(now - 604800000) },
   ];
 
   await db.insert(kindnessLedger).values(activityEntries);

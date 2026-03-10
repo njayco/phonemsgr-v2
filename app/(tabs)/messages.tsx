@@ -3,9 +3,10 @@ import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Avatar } from '@/components/Avatar';
+import { cacheGet, cacheSet } from '@/lib/local-cache';
 import Colors from '@/constants/colors';
 
 interface ChatThread {
@@ -77,11 +78,25 @@ export default function MessagesScreen() {
   const [search, setSearch] = useState('');
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
 
+  const [cachedThreads, setCachedThreads] = useState<ChatThread[] | null>(null);
+
+  useEffect(() => {
+    cacheGet<ChatThread[]>('threads').then((cached) => {
+      if (cached) setCachedThreads(cached);
+    });
+  }, []);
+
   const { data: threads, isLoading } = useQuery<ChatThread[]>({
     queryKey: ['/api/threads'],
   });
 
-  const allThreads = threads || [];
+  useEffect(() => {
+    if (threads) {
+      cacheSet('threads', threads);
+    }
+  }, [threads]);
+
+  const allThreads = threads || cachedThreads || [];
   const filtered = search
     ? allThreads.filter(t => t.participantName.toLowerCase().includes(search.toLowerCase()))
     : allThreads;
@@ -106,7 +121,7 @@ export default function MessagesScreen() {
         />
       </View>
 
-      {isLoading ? (
+      {isLoading && !cachedThreads ? (
         <View style={styles.loadingState}>
           <ActivityIndicator color={Colors.dark.accentBlue} />
         </View>

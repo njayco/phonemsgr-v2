@@ -29,6 +29,10 @@ export function setupWebSocket(server: Server) {
           storage.setUserOnline(userId, true).catch(() => {});
           ws.send(JSON.stringify({ type: "connected", userId }));
         }
+
+        if (userId && msg.type !== "auth") {
+          storage.updateUser(userId, { lastActiveAt: new Date() }).catch(() => {});
+        }
       } catch {}
     });
 

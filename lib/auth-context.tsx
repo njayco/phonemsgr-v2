@@ -1,6 +1,8 @@
 import { createContext, useContext, useState, useEffect, useMemo, useCallback, ReactNode } from 'react';
 import { apiRequest, getQueryFn, queryClient } from '@/lib/query-client';
 import { useQuery } from '@tanstack/react-query';
+import { disconnectWebSocket } from '@/lib/websocket';
+import { setCacheUserId, cacheClearForUser } from '@/lib/local-cache';
 
 export interface UserProfile {
   id: string;
@@ -46,9 +48,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     retry: false,
   });
 
+  useEffect(() => {
+    setCacheUserId(user?.id ?? null);
+  }, [user?.id]);
+
   const signIn = useCallback(async (username: string, password: string) => {
     const res = await apiRequest('POST', '/api/auth/login', { username, password });
     const data = await res.json();
+    setCacheUserId(data.id);
     queryClient.setQueryData(['/api/auth/me'], data);
   }, []);
 
@@ -64,9 +71,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signOut = useCallback(async () => {
-    await apiRequest('POST', '/api/auth/logout');
+    disconnectWebSocket();
+    try {
+      await apiRequest('POST', '/api/auth/logout');
+    } catch {
+    }
+    setCacheUserId(null);
     queryClient.setQueryData(['/api/auth/me'], null);
-    queryClient.clear();
+    queryClient.removeQueries({ predicate: (query) => query.queryKey[0] !== '/api/auth/me' });
   }, []);
 
   const updateUser = useCallback((updates: Partial<UserProfile>) => {

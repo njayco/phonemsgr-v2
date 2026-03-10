@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { View, Text, FlatList, TextInput, StyleSheet, Pressable, Platform, KeyboardAvoidingView, ActivityIndicator } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -8,6 +8,7 @@ import { useQuery, useMutation } from '@tanstack/react-query';
 import { Avatar } from '@/components/Avatar';
 import { apiRequest, queryClient } from '@/lib/query-client';
 import { useAuth } from '@/lib/auth-context';
+import { cacheGet, cacheSet } from '@/lib/local-cache';
 import Colors from '@/constants/colors';
 
 interface Message {
@@ -51,11 +52,28 @@ export default function ChatScreen() {
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
   const bottomInset = Platform.OS === 'web' ? 34 : insets.bottom;
 
+  const chatCacheKey = `chat_${id}`;
+  const [cachedMessages, setCachedMessages] = useState<Message[] | null>(null);
+
+  useEffect(() => {
+    if (id) {
+      cacheGet<Message[]>(chatCacheKey).then((cached) => {
+        if (cached) setCachedMessages(cached);
+      });
+    }
+  }, [id, chatCacheKey]);
+
   const { data: messages, isLoading } = useQuery<Message[]>({
     queryKey: ['/api/threads', id, 'messages'],
     refetchInterval: 5000,
     enabled: !!id,
   });
+
+  useEffect(() => {
+    if (messages) {
+      cacheSet(chatCacheKey, messages);
+    }
+  }, [messages, chatCacheKey]);
 
   const sendMutation = useMutation({
     mutationFn: async (text: string) => {
@@ -76,7 +94,7 @@ export default function ChatScreen() {
     sendMutation.mutate(text);
   }, [inputText, sendMutation]);
 
-  const allMessages = messages || [];
+  const allMessages = messages || cachedMessages || [];
   const reversedMessages = [...allMessages].reverse();
 
   return (
@@ -109,7 +127,7 @@ export default function ChatScreen() {
 
       <View style={styles.headerBorder} />
 
-      {isLoading ? (
+      {isLoading && !cachedMessages ? (
         <View style={styles.loadingState}>
           <ActivityIndicator color={Colors.dark.accentBlue} />
         </View>

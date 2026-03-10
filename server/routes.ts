@@ -129,11 +129,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return res.status(401).json({ message: "User not found" });
     }
 
+    if (!user.isOnline) {
+      await storage.setUserOnline(req.session.userId, true);
+    }
+
     const interests = await storage.getUserInterests(user.id);
     const badges = await storage.getUserBadges(user.id);
 
     const { password: _, ...safeUser } = user;
-    return res.json({ ...safeUser, interests, badges });
+    return res.json({ ...safeUser, interests, badges, isOnline: true });
   });
 
   app.get("/api/profile/:id", requireAuth, async (req, res) => {
@@ -228,6 +232,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     return res.json({ success: true });
   });
 
+  app.delete("/api/buddies/:id", requireAuth, async (req, res) => {
+    const userId = req.session.userId!;
+    const buddyId = req.params.id;
+    await storage.removeBuddy(userId, buddyId);
+    return res.json({ success: true });
+  });
+
   app.get("/api/buddies", requireAuth, async (req, res) => {
     const buddyIds = await storage.getBuddyIds(req.session.userId!);
     return res.json(buddyIds);
@@ -268,7 +279,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.post("/api/feed/:id/like", requireAuth, async (req, res) => {
-    await storage.likePost(req.params.id, req.session.userId!);
+    const userId = req.session.userId!;
+    await storage.likePost(req.params.id, userId);
+    // TODO: rate limiting for kindness abuse prevention
+    await storage.awardKindnessForLike(req.params.id, userId);
     return res.json({ success: true });
   });
 
@@ -278,7 +292,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return res.status(400).json({ message: "text required" });
     }
     await storage.commentOnPost(req.params.id, req.session.userId!, text);
-    return res.json({ success: true });
+    const comments = await storage.getPostComments(req.params.id);
+    return res.json({ success: true, comment: comments[0] });
+  });
+
+  app.get("/api/feed/:id/comments", requireAuth, async (req, res) => {
+    const comments = await storage.getPostComments(req.params.id);
+    return res.json(comments);
+  });
+
+  app.post("/api/feed/:id/kindness", requireAuth, async (req, res) => {
+    try {
+      const { delta } = req.body;
+      if (delta !== 10 && delta !== -10) {
+        return res.status(400).json({ message: "delta must be 10 or -10" });
+      }
+      await storage.awardPostKindness(req.params.id, req.session.userId!, delta);
+      return res.json({ success: true });
+    } catch (err: any) {
+      return res.status(400).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/feed/comments/:id/kindness", requireAuth, async (req, res) => {
+    try {
+      const { delta } = req.body;
+      if (delta !== 10 && delta !== -10) {
+        return res.status(400).json({ message: "delta must be 10 or -10" });
+      }
+      await storage.awardCommentKindness(req.params.id, req.session.userId!, delta);
+      return res.json({ success: true });
+    } catch (err: any) {
+      return res.status(400).json({ message: err.message });
+    }
   });
 
   app.get("/api/kindness/history", requireAuth, async (req, res) => {

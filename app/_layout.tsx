@@ -15,6 +15,7 @@ import { KeyboardProvider } from "react-native-keyboard-controller";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { queryClient } from "@/lib/query-client";
 import { AuthProvider } from "@/lib/auth-context";
+import { cachePurgeExpired } from "@/lib/local-cache";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -50,6 +51,10 @@ export default function RootLayout() {
       SplashScreen.hideAsync();
     }
   }, [fontsLoaded, fontError]);
+
+  useEffect(() => {
+    cachePurgeExpired();
+  }, []);
 
   if (!fontsLoaded && !fontError) return null;
 

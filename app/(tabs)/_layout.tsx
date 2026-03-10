@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { isLiquidGlassAvailable } from "expo-glass-effect";
 import { Tabs, router } from "expo-router";
 import { NativeTabs, Icon, Label } from "expo-router/unstable-native-tabs";
@@ -103,22 +103,30 @@ function ClassicTabLayout() {
 }
 
 export default function TabLayout() {
-  const { isAuthenticated, isLoading, user } = useAuth();
+  const { isAuthenticated, isLoading, user, updateUser } = useAuth();
+  const hasNavigatedAway = useRef(false);
 
   useEffect(() => {
-    if (!isLoading && !isAuthenticated) {
-      router.replace('/');
+    if (!isLoading && !isAuthenticated && !hasNavigatedAway.current) {
+      hasNavigatedAway.current = true;
+      requestAnimationFrame(() => {
+        router.replace('/');
+      });
+    }
+    if (isAuthenticated) {
+      hasNavigatedAway.current = false;
     }
   }, [isLoading, isAuthenticated]);
 
   useEffect(() => {
     if (isAuthenticated && user?.id) {
       connectWebSocket(user.id);
+      updateUser({ isOnline: true });
       return () => {
         disconnectWebSocket();
       };
     }
-  }, [isAuthenticated, user?.id]);
+  }, [isAuthenticated, user?.id, updateUser]);
 
   if (!isAuthenticated) return null;
 

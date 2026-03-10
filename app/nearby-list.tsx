@@ -1,4 +1,4 @@
-import { View, Text, FlatList, StyleSheet, Pressable, Platform, ActivityIndicator } from 'react-native';
+import { View, Text, FlatList, StyleSheet, Pressable, Platform, ActivityIndicator, Alert } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -23,7 +23,7 @@ interface NearbyPerson {
   interests: string[];
 }
 
-function NearbyPersonRow({ person, showAddBuddy }: { person: NearbyPerson; showAddBuddy: boolean }) {
+function NearbyPersonRow({ person, viewType }: { person: NearbyPerson; viewType: string }) {
   const createThreadMutation = useMutation({
     mutationFn: async () => {
       const res = await apiRequest('POST', '/api/threads', { participantId: person.id });
@@ -46,6 +46,37 @@ function NearbyPersonRow({ person, showAddBuddy }: { person: NearbyPerson; showA
       queryClient.invalidateQueries({ queryKey: ['/api/nearby'] });
     },
   });
+
+  const removeBuddyMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest('DELETE', `/api/buddies/${person.id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/buddies'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/nearby'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/feed'] });
+    },
+  });
+
+  const handleRemoveBuddy = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    if (Platform.OS === 'web') {
+      if (window.confirm(`Remove ${person.displayName || person.username} from your buddy list?`)) {
+        removeBuddyMutation.mutate();
+      }
+    } else {
+      Alert.alert(
+        'Remove Buddy',
+        `Remove ${person.displayName || person.username} from your buddy list?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Remove', style: 'destructive', onPress: () => removeBuddyMutation.mutate() },
+        ],
+      );
+    }
+  };
+
+  const isBuddyView = viewType === 'buddy';
 
   return (
     <GlassCard style={styles.personCard}>
@@ -93,7 +124,23 @@ function NearbyPersonRow({ person, showAddBuddy }: { person: NearbyPerson; showA
           <Ionicons name="chatbubble-outline" size={16} color={Colors.dark.accentBlue} />
           <Text style={styles.actionBtnText}>Message</Text>
         </Pressable>
-        {showAddBuddy && (
+        {isBuddyView ? (
+          <Pressable
+            style={[styles.actionBtn, styles.removeBuddyBtn]}
+            onPress={handleRemoveBuddy}
+            disabled={removeBuddyMutation.isPending || removeBuddyMutation.isSuccess}
+            testID={`remove-buddy-${person.id}`}
+          >
+            <Ionicons
+              name={removeBuddyMutation.isSuccess ? 'checkmark' : 'person-remove-outline'}
+              size={16}
+              color={removeBuddyMutation.isSuccess ? Colors.dark.textMuted : Colors.dark.offlineRed}
+            />
+            <Text style={[styles.actionBtnText, { color: removeBuddyMutation.isSuccess ? Colors.dark.textMuted : Colors.dark.offlineRed }]}>
+              {removeBuddyMutation.isSuccess ? 'Removed' : 'Remove'}
+            </Text>
+          </Pressable>
+        ) : (
           <Pressable
             style={[styles.actionBtn, styles.addBuddyBtn]}
             onPress={() => {
@@ -106,7 +153,7 @@ function NearbyPersonRow({ person, showAddBuddy }: { person: NearbyPerson; showA
             <Ionicons
               name={addBuddyMutation.isSuccess ? 'checkmark' : 'person-add-outline'}
               size={16}
-              color={addBuddyMutation.isSuccess ? Colors.dark.accentGreen : Colors.dark.accentGreen}
+              color={Colors.dark.accentGreen}
             />
             <Text style={[styles.actionBtnText, { color: Colors.dark.accentGreen }]}>
               {addBuddyMutation.isSuccess ? 'Added' : 'Add Buddy'}
@@ -159,7 +206,7 @@ export default function NearbyListScreen() {
           data={people}
           keyExtractor={(item) => item.id}
           renderItem={({ item }) => (
-            <NearbyPersonRow person={item} showAddBuddy={viewType === 'nearby'} />
+            <NearbyPersonRow person={item} viewType={viewType} />
           )}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
@@ -201,6 +248,7 @@ const styles = StyleSheet.create({
   actionRow: { flexDirection: 'row', gap: 10, paddingTop: 4, borderTopWidth: 1, borderTopColor: Colors.dark.separator },
   actionBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 8, borderRadius: 10, backgroundColor: Colors.dark.surfaceElevated },
   addBuddyBtn: { backgroundColor: 'rgba(0,255,136,0.08)' },
+  removeBuddyBtn: { backgroundColor: 'rgba(255,68,68,0.08)' },
   actionBtnText: { fontSize: 13, fontFamily: 'Inter_500Medium', color: Colors.dark.accentBlue },
   emptyState: { alignItems: 'center', justifyContent: 'center', paddingTop: 80, gap: 12 },
   emptyText: { fontSize: 15, fontFamily: 'Inter_400Regular', color: Colors.dark.textMuted },

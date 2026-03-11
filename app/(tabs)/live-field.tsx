@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { View, Text, StyleSheet, Pressable, Platform, Dimensions, ActivityIndicator } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -33,6 +33,8 @@ export default function LiveFieldScreen() {
   const [feedMode, setFeedMode] = useState<'buddy' | 'nearby'>('nearby');
   const [locationStatus, setLocationStatus] = useState<'pending' | 'granted' | 'denied'>('pending');
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
+  const watchRef = useRef<any>(null);
+  const webWatchRef = useRef<number | null>(null);
 
   const updatePresenceMutation = useMutation({
     mutationFn: async (coords: { latitude: number; longitude: number }) => {
@@ -40,49 +42,60 @@ export default function LiveFieldScreen() {
     },
   });
 
+  const sendLocation = useCallback((latitude: number, longitude: number) => {
+    setLocationStatus('granted');
+    updatePresenceMutation.mutate({ latitude, longitude });
+  }, []);
+
   useEffect(() => {
     if (!user) return;
 
-    async function requestLocation() {
+    let cleanup: (() => void) | undefined;
+
+    async function startWatching() {
       if (Platform.OS === 'web') {
-        if ('geolocation' in navigator) {
-          navigator.geolocation.getCurrentPosition(
-            (pos) => {
-              setLocationStatus('granted');
-              updatePresenceMutation.mutate({
-                latitude: pos.coords.latitude,
-                longitude: pos.coords.longitude,
-              });
-            },
-            () => {
-              setLocationStatus('denied');
-            },
-          );
-        } else {
+        if (!('geolocation' in navigator)) {
           setLocationStatus('denied');
+          return;
         }
+        const id = navigator.geolocation.watchPosition(
+          (pos) => sendLocation(pos.coords.latitude, pos.coords.longitude),
+          () => setLocationStatus('denied'),
+          { enableHighAccuracy: true, maximumAge: 1000 },
+        );
+        webWatchRef.current = id;
+        cleanup = () => navigator.geolocation.clearWatch(id);
       } else {
         try {
           const Location = await import('expo-location');
           const { status } = await Location.requestForegroundPermissionsAsync();
-          if (status === 'granted') {
-            setLocationStatus('granted');
-            const loc = await Location.getCurrentPositionAsync({});
-            updatePresenceMutation.mutate({
-              latitude: loc.coords.latitude,
-              longitude: loc.coords.longitude,
-            });
-          } else {
+          if (status !== 'granted') {
             setLocationStatus('denied');
+            return;
           }
+          setLocationStatus('granted');
+          const sub = await Location.watchPositionAsync(
+            {
+              accuracy: Location.Accuracy.High,
+              timeInterval: 1000,
+              distanceInterval: 0,
+            },
+            (loc) => sendLocation(loc.coords.latitude, loc.coords.longitude),
+          );
+          watchRef.current = sub;
+          cleanup = () => sub.remove();
         } catch {
           setLocationStatus('denied');
         }
       }
     }
 
-    requestLocation();
-  }, [user?.id]);
+    startWatching();
+
+    return () => {
+      if (cleanup) cleanup();
+    };
+  }, [user?.id, sendLocation]);
 
   const { data: nearbyUsers, isLoading } = useQuery<NearbyUser[]>({
     queryKey: ['/api/nearby', feedMode],
@@ -96,7 +109,7 @@ export default function LiveFieldScreen() {
       return res.json();
     },
     enabled: !!user,
-    refetchInterval: 30000,
+    refetchInterval: 2000,
   });
 
   const users = nearbyUsers || [];

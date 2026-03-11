@@ -189,6 +189,7 @@ export default function LiveFieldScreen() {
                     size={36}
                     showGlow={u.isOnline}
                     glowColor={u.isOnline ? Colors.dark.onlineGreen : 'transparent'}
+                    imageUrl={u.avatar || undefined}
                   />
                   <Text style={styles.radarDistance}>{u.rawDistance || u.distance}m</Text>
                   {u.interests.slice(0, 2).map((interest) => (

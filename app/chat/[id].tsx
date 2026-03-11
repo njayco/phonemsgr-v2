@@ -83,11 +83,11 @@ function MessageBubble({ message, isOwn, onLongPress }: { message: Message; isOw
   );
 }
 
-function TypingBubble({ text, name }: { text: string; name: string }) {
+function TypingBubble({ text, name, avatarUrl }: { text: string; name: string; avatarUrl?: string }) {
   return (
     <View style={[styles.bubbleRow, styles.bubbleRowOther]}>
       <View style={styles.typingRow}>
-        <Avatar name={name} size={20} />
+        <Avatar name={name} size={20} imageUrl={avatarUrl} />
         <View style={[styles.bubble, styles.bubbleOther, styles.typingBubble]}>
           <Text style={styles.typingText}>{text || '...'}</Text>
         </View>
@@ -99,7 +99,7 @@ function TypingBubble({ text, name }: { text: string; name: string }) {
 export default function ChatScreen() {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
-  const { id, name, participantId } = useLocalSearchParams<{ id: string; name: string; participantId: string }>();
+  const { id, name, participantId, avatarUrl: participantAvatarUrl } = useLocalSearchParams<{ id: string; name: string; participantId: string; avatarUrl?: string }>();
   const [inputText, setInputText] = useState('');
   const flatListRef = useRef<FlatList>(null);
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
@@ -338,7 +338,7 @@ export default function ChatScreen() {
           <Ionicons name="chevron-back" size={24} color={Colors.dark.text} />
         </Pressable>
         <Pressable onPress={() => participantId && router.push(`/profile/${participantId}`)}>
-          <Avatar name={name || 'User'} size={32} showGlow glowColor={Colors.dark.onlineGreen} />
+          <Avatar name={name || 'User'} size={32} showGlow glowColor={Colors.dark.onlineGreen} imageUrl={participantAvatarUrl || undefined} />
         </Pressable>
         <View style={styles.headerInfo}>
           <Pressable onPress={() => participantId && router.push(`/profile/${participantId}`)}>
@@ -382,7 +382,7 @@ export default function ChatScreen() {
           showsVerticalScrollIndicator={false}
           ListHeaderComponent={
             typingText !== '' ? (
-              <TypingBubble text={typingText} name={name || 'User'} />
+              <TypingBubble text={typingText} name={name || 'User'} avatarUrl={participantAvatarUrl || undefined} />
             ) : null
           }
         />

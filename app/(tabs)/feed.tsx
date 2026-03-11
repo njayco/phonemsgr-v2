@@ -287,7 +287,7 @@ function CommentItem({ comment, isPostOwner, onAwardKindness, commentDeltas, com
   return (
     <View style={styles.commentRow}>
       <Pressable onPress={() => router.push(`/profile/${comment.userId}`)}>
-        <Avatar name={comment.displayName || comment.username} size={24} />
+        <Avatar name={comment.displayName || comment.username} size={24} imageUrl={comment.avatar || undefined} />
       </Pressable>
       <View style={styles.commentContent}>
         <View style={styles.commentHeader}>
@@ -514,7 +514,7 @@ function FeedPostItem({ post, currentUserId }: { post: FeedPostData; currentUser
     <GlassCard style={styles.postCard}>
       <View style={styles.postHeader}>
         <Pressable onPress={() => router.push(`/profile/${post.userId}`)} style={styles.postAuthorTouchable}>
-          <Avatar name={post.username} size={36} showGlow glowColor={Colors.dark.accentBlue} />
+          <Avatar name={post.username} size={36} showGlow glowColor={Colors.dark.accentBlue} imageUrl={post.avatar || undefined} />
           <View style={styles.postInfo}>
             <Text style={styles.postUsername}>{post.username}</Text>
             <Text style={styles.postTime}>{timeAgo(post.timestamp)}</Text>
@@ -650,7 +650,7 @@ function UploadingCard() {
         )}
         <View style={uploadStyles.info}>
           <View style={uploadStyles.nameRow}>
-            <Avatar name={user?.displayName || user?.username || 'You'} size={20} />
+            <Avatar name={user?.displayName || user?.username || 'You'} size={20} imageUrl={user?.avatarUrl || undefined} />
             <Text style={uploadStyles.username}>{user?.username || 'You'}</Text>
           </View>
           {!!content && <Text style={uploadStyles.content} numberOfLines={1}>{content}</Text>}

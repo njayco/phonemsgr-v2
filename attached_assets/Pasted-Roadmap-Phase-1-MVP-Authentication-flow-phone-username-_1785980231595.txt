@@ -1,0 +1,70 @@
+Roadmap
+
+Phase 1 — MVP
+
+ Authentication flow (phone + username)
+ Home dashboard with kindness score
+ Direct messaging with BEAM send
+ Live Field proximity radar
+ Phone Feed social timeline
+ User profile with badges
+ Monetization center UI
+ Pricing / subscription plans UI
+ Offline resilience simulation
+ Settings and privacy controls
+ Premium dark futuristic design system
+Phase 2 — Backend Integration
+
+ PostgreSQL database with Drizzle ORM (17 tables)
+ Session-based authentication with scrypt password hashing
+ All REST API routes with session middleware
+ All frontend screens using React Query with real API data
+ WebSocket realtime message delivery (scoped to thread participants)
+ File upload support (avatars, media, attachments)
+ Thread authorization and IDOR protection
+ Allowlisted field validation on settings/monetization updates
+ Demo data seeding (6 users, threads, messages, posts)
+Phase 3 — Payments & Verification
+
+ Stripe integration for subscriptions
+ Twilio Verify for phone number OTP
+ In-app purchase flow
+ Revenue payout processing
+Phase 4 — Advanced Features
+
+ Real E2E encryption with key management
+ Chat export (.docx, PDF formats)
+ Content moderation system
+ Advanced analytics dashboard
+Phase 5 — Realtime & Notifications (Completed)
+
+ Optimistic send with temp IDs
+ WhatsApp-style delivery receipts (✓ ✓✓ blue ✓✓)
+ Live keystroke typing preview (throttled 100ms)
+ REDACTED message deletion with classified stamp
+ Real-time kindness/comment WebSocket events
+ In-app notification bell + notifications list
+ Push notifications via expo-notifications (native)
+ Expo Push API (server-side)
+ Cumulative kindness awards bounded [-10, +10] with atomic transactions
+ Kindness display colors (green positive, red negative, grey zero)
+ Pull-to-refresh on feed
+ Local cache with 14-day TTL (messages, threads, feed posts)
+Phase 5.5 — Profiles & Social Navigation (Completed)
+
+ User bio (200 characters) with character counter
+ User link with tappable URL display
+ Profile picture upload with image picker
+ Work (occupation, company) on profile
+ Education CRUD (high school, college, degree, major, graduation year)
+ Public user profiles — tap avatar/name in feed, messages, live field, or chat header
+ User's posts displayed on their profile
+ Message button on other users' profiles
+ Edit button on own profile view
+Phase 6 — Native Offline / Mesh
+
+ Native module for Bluetooth mesh networking
+ BitChat protocol integration
+ WiFi Direct peer discovery
+ Emergency broadcast system
+ Offline file transfer

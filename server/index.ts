@@ -1,7 +1,7 @@
 import express from "express";
 import type { Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
-import { setupUploadRoutes } from "./uploads";
+import { setupUploadRoutes, startViewOnceCleanup } from "./uploads";
 import * as fs from "fs";
 import * as path from "path";
 
@@ -249,6 +249,7 @@ function setupErrorHandler(app: express.Application) {
   // Must come after registerRoutes: upload routes depend on the session
   // middleware that registerRoutes installs.
   setupUploadRoutes(app);
+  startViewOnceCleanup();
 
   setupErrorHandler(app);
 

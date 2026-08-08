@@ -30,7 +30,7 @@ import {
   postViews,
 } from "@shared/schema";
 import { db, pool } from "./db";
-import { eq, and, desc, sql, ne, inArray, or, ilike, isNull } from "drizzle-orm";
+import { eq, and, desc, sql, ne, inArray, or, ilike, isNull, isNotNull, lt } from "drizzle-orm";
 
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
@@ -50,6 +50,7 @@ export interface IStorage {
   getMessageById(messageId: string): Promise<Message | undefined>;
   markViewOnceOpened(messageId: string, viewerId: string): Promise<Message | undefined>;
   getViewOnceMessageByMediaUrl(mediaUrl: string): Promise<Message | undefined>;
+  getExpiredViewOnceMediaUrls(cutoff: Date): Promise<string[]>;
   markMessagesRead(threadId: string, userId: string): Promise<string[]>;
 
   getFeedPosts(limit?: number): Promise<any[]>;
@@ -331,6 +332,21 @@ export class DatabaseStorage implements IStorage {
       .from(messages)
       .where(and(eq(messages.mediaUrl, mediaUrl), eq(messages.isViewOnce, true)));
     return msg;
+  }
+
+  async getExpiredViewOnceMediaUrls(cutoff: Date): Promise<string[]> {
+    const rows = await db
+      .select({ mediaUrl: messages.mediaUrl })
+      .from(messages)
+      .where(
+        and(
+          eq(messages.isViewOnce, true),
+          isNotNull(messages.mediaUrl),
+          isNotNull(messages.viewedAt),
+          lt(messages.viewedAt, cutoff),
+        ),
+      );
+    return rows.map((r) => r.mediaUrl!).filter(Boolean);
   }
 
   async markMessagesRead(threadId: string, userId: string): Promise<string[]> {

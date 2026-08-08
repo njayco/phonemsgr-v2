@@ -61,6 +61,54 @@ export function readUploadAsDataUri(mediaUrl: string): string | null {
   return `data:${mime};base64,${data.toString("base64")}`;
 }
 
+// How long a view-once photo remains available after being opened. Once the
+// window ends, the underlying file is deleted from disk for good — the
+// sender's own access ends at that point too.
+export const VIEW_ONCE_WINDOW_MS = 2 * 60 * 1000;
+
+function deleteUploadFileByMediaUrl(mediaUrl: string): void {
+  const filename = path.basename(mediaUrl);
+  const filePath = path.join(uploadDir, filename);
+  try {
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+      console.log(`[view-once] deleted expired file ${filename}`);
+    }
+  } catch (err) {
+    console.error(`[view-once] failed to delete ${filename}:`, err);
+  }
+}
+
+// Schedule deletion of a view-once file after its viewing window ends.
+// The periodic sweep is the safety net if the server restarts before this
+// timer fires.
+export function scheduleViewOnceDeletion(mediaUrl: string): void {
+  const timer = setTimeout(() => deleteUploadFileByMediaUrl(mediaUrl), VIEW_ONCE_WINDOW_MS);
+  timer.unref?.();
+}
+
+// Periodic sweep: delete files for view-once messages whose viewing window
+// has already ended (covers timers lost to server restarts).
+async function sweepExpiredViewOnceFiles(): Promise<void> {
+  try {
+    const cutoff = new Date(Date.now() - VIEW_ONCE_WINDOW_MS);
+    const mediaUrls = await storage.getExpiredViewOnceMediaUrls(cutoff);
+    for (const mediaUrl of mediaUrls) {
+      if (mediaUrl.startsWith("/uploads/")) {
+        deleteUploadFileByMediaUrl(mediaUrl);
+      }
+    }
+  } catch (err) {
+    console.error("[view-once] sweep failed:", err);
+  }
+}
+
+export function startViewOnceCleanup(): void {
+  sweepExpiredViewOnceFiles();
+  const interval = setInterval(sweepExpiredViewOnceFiles, 60 * 1000);
+  interval.unref?.();
+}
+
 // Centralized authorization for serving uploaded files. View-once media
 // files are only ever served to their sender; recipients receive the photo
 // exactly once, inline via the open endpoint.

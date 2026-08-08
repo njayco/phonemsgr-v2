@@ -9,7 +9,7 @@ import { registerSchema, loginSchema } from "@shared/schema";
 import { setupWebSocket, broadcastToUser, isUserOnlineWs } from "./websocket";
 import { seedDatabase } from "./seed";
 import { sendPushToUser } from "./push";
-import { readUploadAsDataUri } from "./uploads";
+import { readUploadAsDataUri, scheduleViewOnceDeletion } from "./uploads";
 
 declare module "express-session" {
   interface SessionData {
@@ -364,6 +364,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!dataUri) {
         return res.status(404).json({ message: "Photo file not found" });
       }
+      // Delete the file from disk once the viewing window ends. The message
+      // itself keeps its viewed state and shows as "no longer available".
+      scheduleViewOnceDeletion(msg.mediaUrl);
       return res.json({ mediaUrl: dataUri });
     }
 

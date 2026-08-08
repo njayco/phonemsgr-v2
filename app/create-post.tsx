@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { View, Text, StyleSheet, Pressable, Platform, TextInput, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, Pressable, Platform, TextInput, ScrollView, Alert } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -31,6 +31,11 @@ export default function CreatePostScreen() {
 
   const pickPhotos = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const permResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permResult.granted) {
+      Alert.alert('Permission needed', 'Please allow access to your photo library.');
+      return;
+    }
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
       allowsMultipleSelection: true,

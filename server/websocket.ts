@@ -1,4 +1,5 @@
 import { WebSocketServer, WebSocket } from "ws";
+import { ServerResponse } from "node:http";
 import type { Server } from "node:http";
 import { storage } from "./storage";
 import { sessionMiddleware } from "./session";
@@ -122,7 +123,10 @@ export function setupWebSocket(server: Server) {
     // Identity comes from the verified session cookie on the upgrade
     // request — never from a client-supplied value. Unauthenticated
     // connections are rejected before any message handling.
-    sessionMiddleware(req as any, {} as any, () => {
+    // express-session patches res.writeHead/res.end, so give it a real
+    // ServerResponse tied to this request instead of a bare object.
+    const dummyRes = new ServerResponse(req);
+    sessionMiddleware(req as any, dummyRes as any, () => {
       const sessionUserId = (req as any).session?.userId;
       if (!sessionUserId || ws.readyState !== WebSocket.OPEN) {
         ws.close(4401, "unauthenticated");

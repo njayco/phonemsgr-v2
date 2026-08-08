@@ -462,6 +462,11 @@ export default function ChatScreen() {
   }, [inputText, selectedGif, sendMutation]);
 
   const pickFromLibrary = useCallback(async () => {
+    const permResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permResult.granted) {
+      Alert.alert('Permission needed', 'Please allow access to your photo library.');
+      return;
+    }
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
       allowsMultipleSelection: true,

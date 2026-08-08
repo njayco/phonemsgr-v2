@@ -41,6 +41,13 @@
       "expo-font",
       "expo-web-browser",
       [
+        "expo-image-picker",
+        {
+          "photosPermission": "Phone Msgr needs access to your photo library so you can attach photos to chats and posts.",
+          "cameraPermission": "Phone Msgr uses the camera so you can take and send photos in chats."
+        }
+      ],
+      [
         "expo-av",
         {
           "microphonePermission": "Phone Msgr uses the microphone for Direct to Talk so you can transmit your voice while holding the TALK button."

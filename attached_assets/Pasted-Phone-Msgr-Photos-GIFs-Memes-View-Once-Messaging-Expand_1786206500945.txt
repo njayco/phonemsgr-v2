@@ -1,0 +1,44 @@
+Phone Msgr — Photos, GIFs, Memes & View-Once Messaging
+Expand Phone Msgr’s media-sharing capabilities across the Phone Feed, and  messaging system, giving users more ways to visually communicate with friends and the Phone Msgr community.
+Photo Attachments
+Users should be able to attach and upload photos throughout Phone Msgr.
+Phone Feed Posts
+When creating a post in the Phone Feed, users can:
+* Write a text post.
+* Attach one or multiple photos.
+* Preview photos before publishing.
+* Remove or rearrange selected photos before posting.
+* Publish photo-only posts without requiring text.
+* Tap photos in the feed to view them in a larger full-screen format.
+The existing Phone Feed design should remain intact, with photo posts naturally incorporated into the feed.
+Instant Messaging Photo Sharing
+Inside a private Phone Msgr conversation, add a photo attachment button that allows users to:
+* Select an existing photo from their device.
+* Take a new photo using the device camera.
+* Preview the photo before sending.
+* Add an optional text message or caption.
+* Send multiple photos when appropriate.
+Before sending a photo, users should be given two privacy options:
+View Once — The recipient can open the photo one time. After it has been viewed, the photo should no longer be accessible from the conversation.
+Leave in Chat — The photo remains visible inside the conversation alongside normal messages unless the user later deletes it.
+View-once photos should be visually identified so recipients understand that the image can only be opened once.
+The system should track appropriate states such as Sent, Delivered, Opened, and Viewed.
+GIPHY GIF & Meme Integration
+Integrate the GIPHY API directly into Phone Msgr.
+Add a GIF/meme button to the message composer that opens a searchable GIPHY interface.
+Users should be able to:
+* Browse trending GIFs.
+* Search GIPHY using keywords.
+* Browse memes and reactions.
+* Preview a GIF before sending it.
+* Select a GIF or meme and attach it to their message.
+* Add accompanying text when desired.
+* Send the selected media through Phone Msgr.
+The experience should feel native to Phone Msgr rather than redirecting users to an external website.
+GIFs and Memes in Messages
+Extend GIPHY integration to BEAM.
+When composing a BEAM message, users can search GIPHY and attach a GIF, reaction, or meme to the BEAM.
+For example, a user could type:
+"Happy birthday bro!"
+Then search for a birthday GIF and attach it before pressing BEAM.
+The recipient receives the text and attached GIF together as one BEAM message.

@@ -17,6 +17,13 @@ declare module "express-session" {
   }
 }
 
+// Express 5 types route params as `string | string[]` (arrays occur only with
+// wildcard/repeating patterns, which none of our routes use). This helper
+// narrows params to plain strings so handlers stay type-safe.
+function params(req: Request): Record<string, string> {
+  return req.params as Record<string, string>;
+}
+
 function requireAuth(req: Request, res: Response, next: NextFunction) {
   if (!req.session.userId) {
     return res.status(401).json({ message: "Not authenticated" });
@@ -145,7 +152,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.get("/api/profile/:id", requireAuth, async (req, res) => {
-    const user = await storage.getUser(req.params.id);
+    const user = await storage.getUser(params(req).id);
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
@@ -194,7 +201,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.patch("/api/education/:id", requireAuth, async (req, res) => {
-    const edu = await storage.updateEducation(req.params.id, req.session.userId!, req.body);
+    const edu = await storage.updateEducation(params(req).id, req.session.userId!, req.body);
     if (!edu) {
       return res.status(404).json({ message: "Education entry not found" });
     }
@@ -202,7 +209,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.delete("/api/education/:id", requireAuth, async (req, res) => {
-    const deleted = await storage.deleteEducation(req.params.id, req.session.userId!);
+    const deleted = await storage.deleteEducation(params(req).id, req.session.userId!);
     if (!deleted) {
       return res.status(404).json({ message: "Education entry not found" });
     }
@@ -210,7 +217,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.get("/api/profile/:id/posts", requireAuth, async (req, res) => {
-    const posts = await storage.getUserPosts(req.params.id);
+    const posts = await storage.getUserPosts(params(req).id);
     return res.json(posts);
   });
 
@@ -221,16 +228,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/threads/:id/messages", requireAuth, async (req, res) => {
     const userId = req.session.userId!;
-    const inThread = await storage.isUserInThread(userId, req.params.id);
+    const inThread = await storage.isUserInThread(userId, params(req).id);
     if (!inThread) {
       return res.status(403).json({ message: "Not a participant of this thread" });
     }
-    const msgs = await storage.getMessages(req.params.id, 50, userId);
-    const senderIds = await storage.markMessagesRead(req.params.id, userId);
+    const msgs = await storage.getMessages(params(req).id, 50, userId);
+    const senderIds = await storage.markMessagesRead(params(req).id, userId);
     for (const senderId of senderIds) {
       broadcastToUser(senderId, {
         type: "messages_read",
-        threadId: req.params.id,
+        threadId: params(req).id,
         readByUserId: userId,
       });
     }
@@ -248,7 +255,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/threads/:id/messages", requireAuth, async (req, res) => {
     const userId = req.session.userId!;
-    const threadId = req.params.id;
+    const threadId = params(req).id;
     const inThread = await storage.isUserInThread(userId, threadId);
     if (!inThread) {
       return res.status(403).json({ message: "Not a participant of this thread" });
@@ -327,7 +334,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/threads/:threadId/messages/:messageId/open", requireAuth, async (req, res) => {
     const userId = req.session.userId!;
-    const { threadId, messageId } = req.params;
+    const { threadId, messageId } = params(req);
 
     const inThread = await storage.isUserInThread(userId, threadId);
     if (!inThread) {
@@ -414,7 +421,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/threads/:threadId/messages/:messageId", requireAuth, async (req, res) => {
     const userId = req.session.userId!;
-    const { threadId, messageId } = req.params;
+    const { threadId, messageId } = params(req);
 
     const inThread = await storage.isUserInThread(userId, threadId);
     if (!inThread) {
@@ -449,7 +456,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/buddies/:id", requireAuth, async (req, res) => {
     const userId = req.session.userId!;
-    const buddyId = req.params.id;
+    const buddyId = params(req).id;
     if (userId === buddyId) {
       return res.status(400).json({ message: "Cannot add yourself" });
     }
@@ -459,7 +466,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/buddies/:id", requireAuth, async (req, res) => {
     const userId = req.session.userId!;
-    const buddyId = req.params.id;
+    const buddyId = params(req).id;
     await storage.removeBuddy(userId, buddyId);
     return res.json({ success: true });
   });
@@ -510,20 +517,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/feed/:id/view", requireAuth, async (req, res) => {
     const userId = req.session.userId!;
-    await storage.recordPostView(req.params.id, userId);
+    await storage.recordPostView(params(req).id, userId);
     return res.json({ success: true });
   });
 
   app.post("/api/feed/:id/like", requireAuth, async (req, res) => {
     const userId = req.session.userId!;
-    await storage.likePost(req.params.id, userId);
-    await storage.awardKindnessForLike(req.params.id, userId);
+    await storage.likePost(params(req).id, userId);
+    await storage.awardKindnessForLike(params(req).id, userId);
     return res.json({ success: true });
   });
 
   app.post("/api/feed/:id/comment", requireAuth, async (req, res) => {
     const userId = req.session.userId!;
-    const postId = req.params.id;
+    const postId = params(req).id;
     const { text } = req.body;
     if (!text) {
       return res.status(400).json({ message: "text required" });
@@ -557,7 +564,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.get("/api/feed/:id/comments", requireAuth, async (req, res) => {
-    const comments = await storage.getPostComments(req.params.id);
+    const comments = await storage.getPostComments(params(req).id);
     return res.json(comments);
   });
 
@@ -568,7 +575,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "delta must be 10 or -10" });
       }
       const userId = req.session.userId!;
-      const postId = req.params.id;
+      const postId = params(req).id;
       const userDelta = await storage.awardPostKindness(postId, userId, delta);
 
       const postOwner = await storage.getPostOwner(postId);
@@ -610,7 +617,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/feed/:id/my-kindness", requireAuth, async (req, res) => {
     const userId = req.session.userId!;
-    const delta = await storage.getUserKindnessDelta(userId, "post", req.params.id);
+    const delta = await storage.getUserKindnessDelta(userId, "post", params(req).id);
     return res.json({ delta });
   });
 
@@ -621,7 +628,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "delta must be 10 or -10" });
       }
       const userId = req.session.userId!;
-      const commentId = req.params.id;
+      const commentId = params(req).id;
       const userDelta = await storage.awardCommentKindness(commentId, userId, delta);
 
       const commentInfo = await storage.getCommentOwnerAndPost(commentId);
@@ -652,7 +659,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/feed/comments/:id/my-kindness", requireAuth, async (req, res) => {
     const userId = req.session.userId!;
-    const delta = await storage.getUserKindnessDelta(userId, "comment", req.params.id);
+    const delta = await storage.getUserKindnessDelta(userId, "comment", params(req).id);
     return res.json({ delta });
   });
 
@@ -667,7 +674,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.post("/api/notifications/:id/read", requireAuth, async (req, res) => {
-    await storage.markNotificationRead(req.params.id, req.session.userId!);
+    await storage.markNotificationRead(params(req).id, req.session.userId!);
     return res.json({ success: true });
   });
 

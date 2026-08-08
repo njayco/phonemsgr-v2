@@ -118,6 +118,7 @@ export const messages = pgTable("messages", {
   mediaUrl: text("media_url"),
   isViewOnce: boolean("is_view_once").notNull().default(false),
   viewedAt: timestamp("viewed_at"),
+  viewedBy: varchar("viewed_by"),
   status: varchar("status", { length: 20 }).notNull().default("sent"),
   isDeliveredViaMesh: boolean("is_delivered_via_mesh").notNull().default(false),
   isDeleted: boolean("is_deleted").notNull().default(false),

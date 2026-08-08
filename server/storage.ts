@@ -45,12 +45,15 @@ export interface IStorage {
   getThreadsForUser(userId: string): Promise<any[]>;
   getOrCreateThread(userId: string, participantId: string): Promise<string>;
 
-  getMessages(threadId: string, limit?: number): Promise<any[]>;
-  createMessage(threadId: string, senderId: string, text: string, isMesh?: boolean): Promise<Message>;
+  getMessages(threadId: string, limit?: number, requesterId?: string): Promise<any[]>;
+  createMessage(threadId: string, senderId: string, text: string, isMesh?: boolean, media?: { mediaType?: string; mediaUrl?: string; isViewOnce?: boolean }): Promise<Message>;
+  getMessageById(messageId: string): Promise<Message | undefined>;
+  markViewOnceOpened(messageId: string, viewerId: string): Promise<Message | undefined>;
+  getViewOnceMessageByMediaUrl(mediaUrl: string): Promise<Message | undefined>;
   markMessagesRead(threadId: string, userId: string): Promise<string[]>;
 
   getFeedPosts(limit?: number): Promise<any[]>;
-  createFeedPost(userId: string, content: string, mediaType: string, mediaUrl?: string, audience?: string): Promise<FeedPost>;
+  createFeedPost(userId: string, content: string, mediaType: string, mediaUrl?: string, audience?: string, mediaUrls?: string[]): Promise<FeedPost>;
   likePost(postId: string, userId: string): Promise<void>;
   commentOnPost(postId: string, userId: string, text: string): Promise<void>;
 
@@ -313,10 +316,10 @@ export class DatabaseStorage implements IStorage {
     return msg;
   }
 
-  async markViewOnceOpened(messageId: string): Promise<Message | undefined> {
+  async markViewOnceOpened(messageId: string, viewerId: string): Promise<Message | undefined> {
     const [msg] = await db
       .update(messages)
-      .set({ viewedAt: new Date() })
+      .set({ viewedAt: new Date(), viewedBy: viewerId })
       .where(and(eq(messages.id, messageId), eq(messages.isViewOnce, true), isNull(messages.viewedAt)))
       .returning();
     return msg;

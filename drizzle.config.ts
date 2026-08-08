@@ -11,4 +11,7 @@ export default defineConfig({
   dbCredentials: {
     url: process.env.DATABASE_URL,
   },
+  // The "session" table is managed by connect-pg-simple, not Drizzle —
+  // exclude it so `db:push` never tries to drop it.
+  tablesFilter: ["!session"],
 });

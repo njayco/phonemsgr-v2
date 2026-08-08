@@ -41,28 +41,35 @@ function requireAuth(req: Request, res: Response, next: NextFunction) {
   next();
 }
 
-const VIEW_ONCE_WINDOW_MS = 2 * 60 * 1000;
+const MIME_BY_EXT: Record<string, string> = {
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".png": "image/png",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+};
 
-// Centralized authorization for serving uploaded files. View-once media is
-// only accessible to the sender, or to a thread participant during a short
-// window after they opened it via the open endpoint.
+// Read an uploaded image and return it as a data URI (used to deliver
+// view-once photos inline through the authenticated open endpoint, so no
+// reusable file URL is ever exposed to recipients).
+export function readUploadAsDataUri(mediaUrl: string): string | null {
+  const filename = path.basename(mediaUrl);
+  const filePath = path.join(uploadDir, filename);
+  if (!fs.existsSync(filePath)) return null;
+  const mime = MIME_BY_EXT[path.extname(filename).toLowerCase()] || "application/octet-stream";
+  const data = fs.readFileSync(filePath);
+  return `data:${mime};base64,${data.toString("base64")}`;
+}
+
+// Centralized authorization for serving uploaded files. View-once media
+// files are only ever served to their sender; recipients receive the photo
+// exactly once, inline via the open endpoint.
 async function checkFileAccess(userId: string, filename: string): Promise<{ ok: true } | { ok: false; status: number; message: string }> {
   const viewOnceMsg = await storage.getViewOnceMessageByMediaUrl(`/uploads/${filename}`);
   if (!viewOnceMsg || viewOnceMsg.senderId === userId) {
     return { ok: true };
   }
-  const inThread = await storage.isUserInThread(userId, viewOnceMsg.threadId);
-  if (!inThread) {
-    return { ok: false, status: 403, message: "Not authorized" };
-  }
-  if (!viewOnceMsg.viewedAt) {
-    return { ok: false, status: 403, message: "This photo must be opened from the conversation" };
-  }
-  const openedMs = Date.now() - new Date(viewOnceMsg.viewedAt).getTime();
-  if (openedMs > VIEW_ONCE_WINDOW_MS) {
-    return { ok: false, status: 410, message: "This photo is no longer available" };
-  }
-  return { ok: true };
+  return { ok: false, status: 403, message: "This photo can only be opened from the conversation" };
 }
 
 export function setupUploadRoutes(app: Express) {
@@ -117,7 +124,7 @@ export function setupUploadRoutes(app: Express) {
   });
 
   app.get("/api/download/:filename", requireAuth, async (req: Request, res: Response) => {
-    const filename = path.basename(req.params.filename);
+    const filename = path.basename(String(req.params.filename));
     const filePath = path.join(uploadDir, filename);
     if (!fs.existsSync(filePath)) {
       return res.status(404).json({ message: "File not found" });

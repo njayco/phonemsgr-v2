@@ -9,6 +9,7 @@ import { registerSchema, loginSchema } from "@shared/schema";
 import { setupWebSocket, broadcastToUser, isUserOnlineWs } from "./websocket";
 import { seedDatabase } from "./seed";
 import { sendPushToUser } from "./push";
+import { readUploadAsDataUri } from "./uploads";
 
 declare module "express-session" {
   interface SessionData {
@@ -344,7 +345,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return res.status(410).json({ message: "This photo has already been viewed" });
     }
 
-    const opened = await storage.markViewOnceOpened(messageId);
+    const opened = await storage.markViewOnceOpened(messageId, userId);
     if (!opened) {
       return res.status(410).json({ message: "This photo has already been viewed" });
     }
@@ -354,6 +355,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       threadId,
       messageId,
     });
+
+    // Return the image inline as a data URI. This makes the single open
+    // request the only delivery of the photo — no reusable URL is exposed,
+    // and native image components need no authenticated follow-up request.
+    if (msg.mediaUrl && msg.mediaUrl.startsWith("/uploads/")) {
+      const dataUri = readUploadAsDataUri(msg.mediaUrl);
+      if (!dataUri) {
+        return res.status(404).json({ message: "Photo file not found" });
+      }
+      return res.json({ mediaUrl: dataUri });
+    }
 
     return res.json({ mediaUrl: msg.mediaUrl });
   });

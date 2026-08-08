@@ -1092,6 +1092,7 @@ async function comparePasswords(supplied, stored) {
 
 // server/websocket.ts
 import { WebSocketServer, WebSocket } from "ws";
+import { ServerResponse } from "node:http";
 var clients = /* @__PURE__ */ new Map();
 var dttSessions = /* @__PURE__ */ new Map();
 function dttBroadcast(session2, payload, exceptUserId) {
@@ -1173,7 +1174,8 @@ function setupWebSocket(server) {
       ws.isAlive = true;
     });
     let userId = "";
-    sessionMiddleware(req, {}, () => {
+    const dummyRes = new ServerResponse(req);
+    sessionMiddleware(req, dummyRes, () => {
       const sessionUserId = req.session?.userId;
       if (!sessionUserId || ws.readyState !== WebSocket.OPEN) {
         ws.close(4401, "unauthenticated");
@@ -1638,9 +1640,9 @@ var upload = multer({
   storage: diskStorage,
   limits: { fileSize: 50 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
-    const allowedExt = /jpeg|jpg|png|gif|webp|mp4|mp3|pdf|ppt|pptx|doc|docx|wav|m4a|mov|avi|key|ogg/;
+    const allowedExt = /jpeg|jpg|png|gif|webp|heic|heif|mp4|mp3|pdf|ppt|pptx|doc|docx|wav|m4a|mov|avi|key|ogg/;
     const extOk = allowedExt.test(path.extname(file.originalname).toLowerCase().replace(".", ""));
-    const allowedMime = /image\/|video\/|audio\/|application\/pdf|application\/vnd\.ms-powerpoint|application\/vnd\.openxmlformats|application\/msword|application\/vnd\.apple\.keynote/;
+    const allowedMime = /image\/|video\/|audio\/|application\/pdf|application\/vnd\.ms-powerpoint|application\/vnd\.openxmlformats|application\/msword|application\/vnd\.apple\.keynote|application\/octet-stream/;
     const mimeOk = allowedMime.test(file.mimetype);
     if (extOk && mimeOk) {
       return cb(null, true);

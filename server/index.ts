@@ -19,13 +19,22 @@ function setupCors(app: express.Application) {
   app.use((req, res, next) => {
     const origins = new Set<string>();
 
+    const addDomain = (domain: string) => {
+      origins.add(`https://${domain}`);
+      // Expo web preview is served from an ".expo." variant of the dev domain
+      const firstDot = domain.indexOf(".");
+      if (firstDot > 0) {
+        origins.add(`https://${domain.slice(0, firstDot)}.expo${domain.slice(firstDot)}`);
+      }
+    };
+
     if (process.env.REPLIT_DEV_DOMAIN) {
-      origins.add(`https://${process.env.REPLIT_DEV_DOMAIN}`);
+      addDomain(process.env.REPLIT_DEV_DOMAIN);
     }
 
     if (process.env.REPLIT_DOMAINS) {
       process.env.REPLIT_DOMAINS.split(",").forEach((d) => {
-        origins.add(`https://${d.trim()}`);
+        addDomain(d.trim());
       });
     }
 
@@ -232,11 +241,14 @@ function setupErrorHandler(app: express.Application) {
   setupCors(app);
   setupBodyParsing(app);
   setupRequestLogging(app);
-  setupUploadRoutes(app);
 
   configureExpoAndLanding(app);
 
   const server = await registerRoutes(app);
+
+  // Must come after registerRoutes: upload routes depend on the session
+  // middleware that registerRoutes installs.
+  setupUploadRoutes(app);
 
   setupErrorHandler(app);
 

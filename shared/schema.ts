@@ -114,6 +114,10 @@ export const messages = pgTable("messages", {
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),
   text: text("text").notNull(),
+  mediaType: varchar("media_type", { length: 20 }),
+  mediaUrl: text("media_url"),
+  isViewOnce: boolean("is_view_once").notNull().default(false),
+  viewedAt: timestamp("viewed_at"),
   status: varchar("status", { length: 20 }).notNull().default("sent"),
   isDeliveredViaMesh: boolean("is_delivered_via_mesh").notNull().default(false),
   isDeleted: boolean("is_deleted").notNull().default(false),
@@ -133,6 +137,7 @@ export const feedPosts = pgTable("feed_posts", {
   content: text("content").notNull().default(""),
   mediaType: text("media_type").notNull().default("text"),
   mediaUrl: text("media_url"),
+  mediaUrls: text("media_urls").array(),
   audience: text("audience").notNull().default("everyone"),
   kindnessEarned: integer("kindness_earned").notNull().default(0),
   likesCount: integer("likes_count").notNull().default(0),

@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useCallback, useRef } from 'react';
-import { Platform } from 'react-native';
 import { fetch as expoFetch } from 'expo/fetch';
 import { getApiUrl } from '@/lib/query-client';
+import { uploadFile, type PickedFile } from '@/lib/upload-file';
 
 interface PendingUpload {
   id: string;
@@ -22,7 +22,8 @@ interface UploadContextType {
     content: string;
     mediaType: string;
     audience: string;
-    file: { uri: string; name: string; type: string } | null;
+    file: PickedFile | null;
+    files?: PickedFile[];
   }) => void;
   clearUpload: () => void;
 }
@@ -39,40 +40,38 @@ export function useUpload() {
 
 export function UploadProvider({ children }: { children: React.ReactNode }) {
   const [pendingUpload, setPendingUpload] = useState<PendingUpload | null>(null);
-  const abortRef = useRef<XMLHttpRequest | null>(null);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const cancelledRef = useRef(false);
 
   const clearUpload = useCallback(() => {
-    if (abortRef.current) {
-      abortRef.current.abort();
-      abortRef.current = null;
-    }
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
+    cancelledRef.current = true;
     setPendingUpload(null);
   }, []);
 
-  const startUpload = useCallback(({ content, mediaType, audience, file }: {
+  const startUpload = useCallback(({ content, mediaType, audience, file, files }: {
     content: string;
     mediaType: string;
     audience: string;
-    file: { uri: string; name: string; type: string } | null;
+    file: PickedFile | null;
+    files?: PickedFile[];
   }) => {
     const uploadId = Date.now().toString() + Math.random().toString(36).substr(2, 9);
-    const previewUri = file && (mediaType === 'image') ? file.uri : undefined;
+    cancelledRef.current = false;
+
+    const allFiles: PickedFile[] = files && files.length > 0 ? files : file ? [file] : [];
+    const isMultiImage = !!(files && files.length > 0);
+    const effectiveMediaType = allFiles.length > 0 ? (isMultiImage ? 'image' : mediaType) : 'text';
+    const previewUri = allFiles.length > 0 && effectiveMediaType === 'image' ? allFiles[0].uri : undefined;
 
     const upload: PendingUpload = {
       id: uploadId,
       content,
-      mediaType: file ? mediaType : 'text',
+      mediaType: effectiveMediaType,
       audience,
-      fileUri: file?.uri || '',
-      fileName: file?.name || '',
-      fileType: file?.type || '',
+      fileUri: allFiles[0]?.uri || '',
+      fileName: allFiles[0]?.name || '',
+      fileType: allFiles[0]?.type || '',
       progress: 0,
-      status: file ? 'uploading' : 'creating',
+      status: allFiles.length > 0 ? 'uploading' : 'creating',
       previewUri,
     };
 
@@ -80,14 +79,20 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
 
     const apiUrl = getApiUrl();
 
-    const createPost = async (mediaUrl?: string) => {
+    const createPost = async (mediaUrl?: string, mediaUrls?: string[]) => {
       setPendingUpload(prev => prev?.id === uploadId ? { ...prev, status: 'creating', progress: 100 } : prev);
       try {
         const res = await expoFetch(new URL('/api/feed', apiUrl).toString(), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
-          body: JSON.stringify({ content, mediaType: file ? mediaType : 'text', audience, mediaUrl }),
+          body: JSON.stringify({
+            content,
+            mediaType: effectiveMediaType,
+            audience,
+            mediaUrl,
+            mediaUrls,
+          }),
         });
         if (!res.ok) throw new Error('Post creation failed');
         setPendingUpload(prev => prev?.id === uploadId ? { ...prev, status: 'done' } : prev);
@@ -99,25 +104,31 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
       }
     };
 
-    if (!file) {
+    if (allFiles.length === 0) {
       createPost();
       return;
     }
 
-    if (Platform.OS === 'web') {
-      const formData = new FormData();
-      globalThis.fetch(file.uri)
-        .then(r => r.blob())
-        .then(blob => {
-          formData.append('file', blob, file.name);
-          doXhrUpload(formData, uploadId, apiUrl, createPost, setPendingUpload, abortRef);
-        })
-        .catch(() => {
-          setPendingUpload(prev => prev?.id === uploadId ? { ...prev, status: 'error' } : prev);
-        });
-    } else {
-      doNativeUpload(file, uploadId, apiUrl, createPost, setPendingUpload, timerRef);
-    }
+    (async () => {
+      try {
+        const urls: string[] = [];
+        for (let i = 0; i < allFiles.length; i++) {
+          if (cancelledRef.current) return;
+          const url = await uploadFile(allFiles[i]);
+          urls.push(url);
+          const pct = Math.round(((i + 1) / allFiles.length) * 95);
+          setPendingUpload(prev => prev?.id === uploadId ? { ...prev, progress: pct } : prev);
+        }
+        if (cancelledRef.current) return;
+        if (isMultiImage) {
+          await createPost(undefined, urls);
+        } else {
+          await createPost(urls[0]);
+        }
+      } catch {
+        setPendingUpload(prev => prev?.id === uploadId ? { ...prev, status: 'error' } : prev);
+      }
+    })();
   }, []);
 
   return (
@@ -125,98 +136,4 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
       {children}
     </UploadContext.Provider>
   );
-}
-
-function doXhrUpload(
-  formData: FormData,
-  uploadId: string,
-  apiUrl: string,
-  createPost: (mediaUrl: string) => Promise<void>,
-  setPendingUpload: React.Dispatch<React.SetStateAction<PendingUpload | null>>,
-  abortRef: React.MutableRefObject<XMLHttpRequest | null>,
-) {
-  const xhr = new XMLHttpRequest();
-  abortRef.current = xhr;
-
-  xhr.upload.onprogress = (event) => {
-    if (event.lengthComputable) {
-      const pct = Math.round((event.loaded / event.total) * 95);
-      setPendingUpload(prev => prev?.id === uploadId ? { ...prev, progress: pct } : prev);
-    }
-  };
-
-  xhr.onload = () => {
-    abortRef.current = null;
-    if (xhr.status >= 200 && xhr.status < 300) {
-      try {
-        const data = JSON.parse(xhr.responseText);
-        createPost(data.url);
-      } catch {
-        setPendingUpload(prev => prev?.id === uploadId ? { ...prev, status: 'error' } : prev);
-      }
-    } else {
-      setPendingUpload(prev => prev?.id === uploadId ? { ...prev, status: 'error' } : prev);
-    }
-  };
-
-  xhr.onerror = () => {
-    abortRef.current = null;
-    setPendingUpload(prev => prev?.id === uploadId ? { ...prev, status: 'error' } : prev);
-  };
-
-  const uploadUrl = new URL('/api/upload/media', apiUrl).toString();
-  xhr.open('POST', uploadUrl);
-  xhr.withCredentials = true;
-  xhr.send(formData);
-}
-
-async function doNativeUpload(
-  file: { uri: string; name: string; type: string },
-  uploadId: string,
-  apiUrl: string,
-  createPost: (mediaUrl: string) => Promise<void>,
-  setPendingUpload: React.Dispatch<React.SetStateAction<PendingUpload | null>>,
-  timerRef: React.MutableRefObject<ReturnType<typeof setInterval> | null>,
-) {
-  let simulatedProgress = 5;
-  timerRef.current = setInterval(() => {
-    simulatedProgress = Math.min(simulatedProgress + Math.random() * 12 + 3, 90);
-    setPendingUpload(prev => prev?.id === uploadId ? { ...prev, progress: Math.round(simulatedProgress) } : prev);
-  }, 400);
-
-  try {
-    const formData = new FormData();
-    formData.append('file', {
-      uri: file.uri,
-      name: file.name,
-      type: file.type,
-    } as any);
-
-    const uploadUrl = new URL('/api/upload/media', apiUrl).toString();
-    const res = await expoFetch(uploadUrl, {
-      method: 'POST',
-      body: formData,
-      credentials: 'include',
-    });
-
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
-
-    if (!res.ok) {
-      const errText = await res.text().catch(() => '');
-      throw new Error(`Upload failed: ${res.status} ${errText}`);
-    }
-
-    setPendingUpload(prev => prev?.id === uploadId ? { ...prev, progress: 95 } : prev);
-    const data = await res.json();
-    await createPost(data.url);
-  } catch {
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
-    setPendingUpload(prev => prev?.id === uploadId ? { ...prev, status: 'error' } : prev);
-  }
 }

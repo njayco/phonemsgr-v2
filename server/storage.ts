@@ -30,7 +30,7 @@ import {
   postViews,
 } from "@shared/schema";
 import { db, pool } from "./db";
-import { eq, and, desc, sql, ne, inArray, or, ilike } from "drizzle-orm";
+import { eq, and, desc, sql, ne, inArray, or, ilike, isNull } from "drizzle-orm";
 
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
@@ -246,7 +246,7 @@ export class DatabaseStorage implements IStorage {
     return thread.id;
   }
 
-  async getMessages(threadId: string, limit = 50): Promise<any[]> {
+  async getMessages(threadId: string, limit = 50, requesterId?: string): Promise<any[]> {
     const rows = await db
       .select()
       .from(messages)
@@ -254,14 +254,20 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(messages.createdAt))
       .limit(limit);
 
-    return rows.map((m) => ({
-      ...m,
-      text: m.isDeleted ? "REDACTED" : m.text,
-      createdAt: m.createdAt.toISOString(),
-      deliveredAt: m.deliveredAt?.toISOString() || null,
-      readAt: m.readAt?.toISOString() || null,
-      deletedAt: m.deletedAt?.toISOString() || null,
-    }));
+    return rows.map((m) => {
+      const hideViewOnceMedia =
+        m.isViewOnce && requesterId && m.senderId !== requesterId;
+      return {
+        ...m,
+        text: m.isDeleted ? "REDACTED" : m.text,
+        mediaUrl: m.isDeleted ? null : hideViewOnceMedia ? null : m.mediaUrl,
+        viewedAt: m.viewedAt?.toISOString() || null,
+        createdAt: m.createdAt.toISOString(),
+        deliveredAt: m.deliveredAt?.toISOString() || null,
+        readAt: m.readAt?.toISOString() || null,
+        deletedAt: m.deletedAt?.toISOString() || null,
+      };
+    });
   }
 
   async createMessage(
@@ -269,6 +275,7 @@ export class DatabaseStorage implements IStorage {
     senderId: string,
     text: string,
     isMesh = false,
+    media?: { mediaType?: string; mediaUrl?: string; isViewOnce?: boolean },
   ): Promise<Message> {
     const [msg] = await db
       .insert(messages)
@@ -277,6 +284,9 @@ export class DatabaseStorage implements IStorage {
         senderId,
         text,
         isDeliveredViaMesh: isMesh,
+        mediaType: media?.mediaType || null,
+        mediaUrl: media?.mediaUrl || null,
+        isViewOnce: media?.isViewOnce || false,
       })
       .returning();
 
@@ -295,6 +305,28 @@ export class DatabaseStorage implements IStorage {
         ),
       );
 
+    return msg;
+  }
+
+  async getMessageById(messageId: string): Promise<Message | undefined> {
+    const [msg] = await db.select().from(messages).where(eq(messages.id, messageId));
+    return msg;
+  }
+
+  async markViewOnceOpened(messageId: string): Promise<Message | undefined> {
+    const [msg] = await db
+      .update(messages)
+      .set({ viewedAt: new Date() })
+      .where(and(eq(messages.id, messageId), eq(messages.isViewOnce, true), isNull(messages.viewedAt)))
+      .returning();
+    return msg;
+  }
+
+  async getViewOnceMessageByMediaUrl(mediaUrl: string): Promise<Message | undefined> {
+    const [msg] = await db
+      .select()
+      .from(messages)
+      .where(and(eq(messages.mediaUrl, mediaUrl), eq(messages.isViewOnce, true)));
     return msg;
   }
 
@@ -342,6 +374,7 @@ export class DatabaseStorage implements IStorage {
         content: feedPosts.content,
         mediaType: feedPosts.mediaType,
         mediaUrl: feedPosts.mediaUrl,
+        mediaUrls: feedPosts.mediaUrls,
         kindnessEarned: feedPosts.kindnessEarned,
         likesCount: feedPosts.likesCount,
         commentsCount: feedPosts.commentsCount,
@@ -361,6 +394,7 @@ export class DatabaseStorage implements IStorage {
       content: p.content,
       mediaType: p.mediaType,
       mediaUrl: p.mediaUrl,
+      mediaUrls: p.mediaUrls || (p.mediaUrl && p.mediaType === "image" ? [p.mediaUrl] : null),
       timestamp: p.createdAt.getTime(),
       kindnessEarned: p.kindnessEarned,
       likes: p.likesCount,
@@ -375,10 +409,18 @@ export class DatabaseStorage implements IStorage {
     mediaType: string,
     mediaUrl?: string,
     audience?: string,
+    mediaUrls?: string[],
   ): Promise<FeedPost> {
     const [post] = await db
       .insert(feedPosts)
-      .values({ userId, content, mediaType, mediaUrl, audience: audience || "everyone" })
+      .values({
+        userId,
+        content,
+        mediaType,
+        mediaUrl: mediaUrl || (mediaUrls && mediaUrls.length > 0 ? mediaUrls[0] : undefined),
+        mediaUrls: mediaUrls && mediaUrls.length > 0 ? mediaUrls : undefined,
+        audience: audience || "everyone",
+      })
       .returning();
     return post;
   }
@@ -612,6 +654,7 @@ export class DatabaseStorage implements IStorage {
         content: feedPosts.content,
         mediaType: feedPosts.mediaType,
         mediaUrl: feedPosts.mediaUrl,
+        mediaUrls: feedPosts.mediaUrls,
         kindnessEarned: feedPosts.kindnessEarned,
         likesCount: feedPosts.likesCount,
         commentsCount: feedPosts.commentsCount,
@@ -700,6 +743,7 @@ export class DatabaseStorage implements IStorage {
         content: feedPosts.content,
         mediaType: feedPosts.mediaType,
         mediaUrl: feedPosts.mediaUrl,
+        mediaUrls: feedPosts.mediaUrls,
         audience: feedPosts.audience,
         kindnessEarned: feedPosts.kindnessEarned,
         likesCount: feedPosts.likesCount,
@@ -730,6 +774,7 @@ export class DatabaseStorage implements IStorage {
       content: p.content,
       mediaType: p.mediaType,
       mediaUrl: p.mediaUrl,
+      mediaUrls: p.mediaUrls || (p.mediaUrl && p.mediaType === "image" ? [p.mediaUrl] : null),
       audience: p.audience,
       timestamp: p.createdAt.getTime(),
       kindnessEarned: p.kindnessEarned,
@@ -750,6 +795,7 @@ export class DatabaseStorage implements IStorage {
         content: feedPosts.content,
         mediaType: feedPosts.mediaType,
         mediaUrl: feedPosts.mediaUrl,
+        mediaUrls: feedPosts.mediaUrls,
         audience: feedPosts.audience,
         kindnessEarned: feedPosts.kindnessEarned,
         likesCount: feedPosts.likesCount,
@@ -779,6 +825,7 @@ export class DatabaseStorage implements IStorage {
       content: p.content,
       mediaType: p.mediaType,
       mediaUrl: p.mediaUrl,
+      mediaUrls: p.mediaUrls || (p.mediaUrl && p.mediaType === "image" ? [p.mediaUrl] : null),
       audience: p.audience,
       timestamp: p.createdAt.getTime(),
       kindnessEarned: p.kindnessEarned,

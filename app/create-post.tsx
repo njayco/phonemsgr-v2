@@ -4,8 +4,11 @@ import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import * as ImagePicker from 'expo-image-picker';
+import { Image } from 'expo-image';
 import { GlassCard } from '@/components/GlassCard';
 import { useUpload } from '@/lib/upload-context';
+import type { PickedFile } from '@/lib/upload-file';
 import Colors from '@/constants/colors';
 
 type Audience = 'everyone' | 'buddy' | 'nearby';
@@ -16,26 +19,63 @@ const audienceOptions: { value: Audience; label: string; icon: string }[] = [
   { value: 'nearby', label: 'Nearby', icon: 'location-outline' },
 ];
 
+const MAX_PHOTOS = 10;
+
 export default function CreatePostScreen() {
   const insets = useSafeAreaInsets();
   const { startUpload } = useUpload();
   const [content, setContent] = useState('');
   const [audience, setAudience] = useState<Audience>('everyone');
+  const [photos, setPhotos] = useState<PickedFile[]>([]);
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
 
+  const pickPhotos = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsMultipleSelection: true,
+      selectionLimit: MAX_PHOTOS - photos.length,
+      quality: 0.8,
+    });
+    if (result.canceled) return;
+    const picked: PickedFile[] = result.assets.map((a, i) => ({
+      uri: a.uri,
+      name: a.fileName || `photo_${Date.now()}_${i}.jpg`,
+      type: a.mimeType || 'image/jpeg',
+    }));
+    setPhotos((prev) => [...prev, ...picked].slice(0, MAX_PHOTOS));
+  };
+
+  const removePhoto = (index: number) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setPhotos((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const movePhoto = (index: number, dir: -1 | 1) => {
+    const target = index + dir;
+    if (target < 0 || target >= photos.length) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setPhotos((prev) => {
+      const next = [...prev];
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
+    });
+  };
+
   const handlePost = () => {
-    if (!content.trim()) return;
+    if (!content.trim() && photos.length === 0) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     startUpload({
-      content,
-      mediaType: 'text',
+      content: content.trim(),
+      mediaType: photos.length > 0 ? 'image' : 'text',
       audience,
       file: null,
+      files: photos.length > 0 ? photos : undefined,
     });
     router.back();
   };
 
-  const canPost = content.trim().length > 0;
+  const canPost = content.trim().length > 0 || photos.length > 0;
 
   return (
     <View style={styles.container}>
@@ -57,7 +97,7 @@ export default function CreatePostScreen() {
       <ScrollView style={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <TextInput
           style={styles.textInput}
-          placeholder="What's on your mind?"
+          placeholder={photos.length > 0 ? 'Add a caption (optional)...' : "What's on your mind?"}
           placeholderTextColor={Colors.dark.textMuted}
           value={content}
           onChangeText={setContent}
@@ -66,6 +106,46 @@ export default function CreatePostScreen() {
           autoFocus
           testID="post-content-input"
         />
+
+        {photos.length > 0 && (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.photoStrip} contentContainerStyle={styles.photoStripContent}>
+            {photos.map((p, i) => (
+              <View key={`${p.uri}-${i}`} style={styles.photoWrap}>
+                <Image source={{ uri: p.uri }} style={styles.photoThumb} contentFit="cover" />
+                <Pressable style={styles.photoRemove} onPress={() => removePhoto(i)} testID={`remove-photo-${i}`}>
+                  <Ionicons name="close-circle" size={20} color="#FFFFFF" />
+                </Pressable>
+                <View style={styles.photoReorderRow}>
+                  <Pressable
+                    style={[styles.reorderBtn, i === 0 && { opacity: 0.3 }]}
+                    onPress={() => movePhoto(i, -1)}
+                    disabled={i === 0}
+                  >
+                    <Ionicons name="chevron-back" size={14} color="#FFFFFF" />
+                  </Pressable>
+                  <Pressable
+                    style={[styles.reorderBtn, i === photos.length - 1 && { opacity: 0.3 }]}
+                    onPress={() => movePhoto(i, 1)}
+                    disabled={i === photos.length - 1}
+                  >
+                    <Ionicons name="chevron-forward" size={14} color="#FFFFFF" />
+                  </Pressable>
+                </View>
+              </View>
+            ))}
+          </ScrollView>
+        )}
+
+        <Pressable
+          style={[styles.addPhotosBtn, photos.length >= MAX_PHOTOS && { opacity: 0.4 }]}
+          onPress={photos.length >= MAX_PHOTOS ? undefined : pickPhotos}
+          testID="add-photos-button"
+        >
+          <Ionicons name="images-outline" size={18} color={Colors.dark.accentBlue} />
+          <Text style={styles.addPhotosText}>
+            {photos.length === 0 ? 'Add Photos' : `Add More (${photos.length}/${MAX_PHOTOS})`}
+          </Text>
+        </Pressable>
 
         <GlassCard style={styles.optionsCard}>
           <Text style={styles.optionLabel}>Who can see this?</Text>
@@ -106,7 +186,20 @@ const styles = StyleSheet.create({
   postButtonText: { fontSize: 14, fontFamily: 'Inter_600SemiBold', color: '#FFFFFF' },
   postButtonTextDisabled: { opacity: 0.6 },
   scrollContent: { flex: 1, paddingHorizontal: 16 },
-  textInput: { fontSize: 16, fontFamily: 'Inter_400Regular', color: Colors.dark.text, minHeight: 120, marginBottom: 16, lineHeight: 24 },
+  textInput: { fontSize: 16, fontFamily: 'Inter_400Regular', color: Colors.dark.text, minHeight: 100, marginBottom: 12, lineHeight: 24 },
+  photoStrip: { marginBottom: 12 },
+  photoStripContent: { gap: 10 },
+  photoWrap: { width: 110 },
+  photoThumb: { width: 110, height: 110, borderRadius: 12, backgroundColor: Colors.dark.surfaceElevated },
+  photoRemove: { position: 'absolute', top: 4, right: 4, backgroundColor: 'rgba(0,0,0,0.5)', borderRadius: 10 },
+  photoReorderRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 4 },
+  reorderBtn: { width: 32, height: 24, borderRadius: 6, backgroundColor: Colors.dark.surfaceElevated, alignItems: 'center', justifyContent: 'center' },
+  addPhotosBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    paddingVertical: 12, borderRadius: 12, borderWidth: 1, borderColor: Colors.dark.accentBlue,
+    borderStyle: 'dashed' as any, marginBottom: 16,
+  },
+  addPhotosText: { fontSize: 13, fontFamily: 'Inter_500Medium', color: Colors.dark.accentBlue },
   optionsCard: { marginBottom: 12, gap: 10 },
   optionLabel: { fontSize: 13, fontFamily: 'Inter_600SemiBold', color: Colors.dark.textSecondary },
   audienceRow: { flexDirection: 'row', gap: 8 },

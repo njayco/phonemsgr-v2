@@ -224,7 +224,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     if (!inThread) {
       return res.status(403).json({ message: "Not a participant of this thread" });
     }
-    const msgs = await storage.getMessages(req.params.id);
+    const msgs = await storage.getMessages(req.params.id, 50, userId);
     const senderIds = await storage.markMessagesRead(req.params.id, userId);
     for (const senderId of senderIds) {
       broadcastToUser(senderId, {
@@ -252,11 +252,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     if (!inThread) {
       return res.status(403).json({ message: "Not a participant of this thread" });
     }
-    const { text, isMesh } = req.body;
-    if (!text) {
-      return res.status(400).json({ message: "text required" });
+    const { text, isMesh, mediaType, mediaUrl, isViewOnce } = req.body;
+    if (!text && !mediaUrl) {
+      return res.status(400).json({ message: "text or media required" });
     }
-    const msg = await storage.createMessage(threadId, userId, text, isMesh || false);
+    if (mediaUrl && !["image", "gif"].includes(mediaType)) {
+      return res.status(400).json({ message: "invalid mediaType" });
+    }
+    const msg = await storage.createMessage(threadId, userId, text || "", isMesh || false, {
+      mediaType: mediaUrl ? mediaType : undefined,
+      mediaUrl,
+      isViewOnce: mediaType === "image" ? !!isViewOnce : false,
+    });
 
     const participantIds = await storage.getThreadParticipantIds(threadId);
     const recipientIds = participantIds.filter((id) => id !== userId);
@@ -267,11 +274,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       status: "sent",
     };
 
+    // Never expose view-once media URLs to recipients — they must use the open endpoint
+    const recipientPayload = msg.isViewOnce ? { ...msgPayload, mediaUrl: null } : msgPayload;
+
+    const previewText = text
+      ? text
+      : mediaType === "gif"
+        ? "Sent a GIF"
+        : isViewOnce
+          ? "Sent a view-once photo"
+          : "Sent a photo";
+
     for (const recipientId of recipientIds) {
       broadcastToUser(recipientId, {
         type: "new_message",
         threadId,
-        message: msgPayload,
+        message: recipientPayload,
       });
 
       const sender = await storage.getUser(userId);
@@ -286,7 +304,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
         msgPayload.status = "delivered";
       } else {
-        sendPushToUser(recipientId, senderName, text, {
+        sendPushToUser(recipientId, senderName, previewText, {
           type: "new_message",
           threadId,
         }).catch(() => {});
@@ -296,7 +314,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         recipientId,
         "new_message",
         "New Message",
-        `${senderName}: ${text.length > 50 ? text.slice(0, 50) + '...' : text}`,
+        `${senderName}: ${previewText.length > 50 ? previewText.slice(0, 50) + '...' : previewText}`,
         threadId,
         userId,
       );
@@ -304,6 +322,79 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
 
     return res.json(msgPayload);
+  });
+
+  app.post("/api/threads/:threadId/messages/:messageId/open", requireAuth, async (req, res) => {
+    const userId = req.session.userId!;
+    const { threadId, messageId } = req.params;
+
+    const inThread = await storage.isUserInThread(userId, threadId);
+    if (!inThread) {
+      return res.status(403).json({ message: "Not a participant of this thread" });
+    }
+
+    const msg = await storage.getMessageById(messageId);
+    if (!msg || msg.threadId !== threadId || !msg.isViewOnce || msg.isDeleted) {
+      return res.status(404).json({ message: "Message not found" });
+    }
+    if (msg.senderId === userId) {
+      return res.status(403).json({ message: "Sender cannot open a view-once photo" });
+    }
+    if (msg.viewedAt) {
+      return res.status(410).json({ message: "This photo has already been viewed" });
+    }
+
+    const opened = await storage.markViewOnceOpened(messageId);
+    if (!opened) {
+      return res.status(410).json({ message: "This photo has already been viewed" });
+    }
+
+    broadcastToUser(msg.senderId, {
+      type: "message_opened",
+      threadId,
+      messageId,
+    });
+
+    return res.json({ mediaUrl: msg.mediaUrl });
+  });
+
+  app.get("/api/giphy/gifs", requireAuth, async (req, res) => {
+    const apiKey = process.env.GIPHY_API_KEY;
+    if (!apiKey) {
+      return res.status(503).json({ message: "GIF search is not configured" });
+    }
+    const q = ((req.query.q as string) || "").trim();
+    const kind = req.query.kind === "memes" ? "memes" : "gifs";
+    const searchQuery = q || (kind === "memes" ? "meme reaction" : "");
+
+    try {
+      const params = new URLSearchParams({
+        api_key: apiKey,
+        limit: "24",
+        rating: "pg-13",
+      });
+      let endpoint: string;
+      if (searchQuery) {
+        params.set("q", searchQuery);
+        endpoint = "https://api.giphy.com/v1/gifs/search";
+      } else {
+        endpoint = "https://api.giphy.com/v1/gifs/trending";
+      }
+      const giphyRes = await fetch(`${endpoint}?${params.toString()}`);
+      if (!giphyRes.ok) {
+        return res.status(502).json({ message: "GIPHY request failed" });
+      }
+      const data: any = await giphyRes.json();
+      const gifs = (data.data || []).map((g: any) => ({
+        id: g.id,
+        title: g.title || "",
+        previewUrl: g.images?.fixed_width?.url || g.images?.original?.url,
+        url: g.images?.fixed_height?.url || g.images?.original?.url,
+      })).filter((g: any) => g.url);
+      return res.json(gifs);
+    } catch {
+      return res.status(502).json({ message: "GIPHY request failed" });
+    }
   });
 
   app.delete("/api/threads/:threadId/messages/:messageId", requireAuth, async (req, res) => {
@@ -386,13 +477,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.post("/api/feed", requireAuth, async (req, res) => {
-    const { content, mediaType, mediaUrl, audience } = req.body;
+    const { content, mediaType, mediaUrl, audience, mediaUrls } = req.body;
+    const urls = Array.isArray(mediaUrls) ? mediaUrls.filter((u: any) => typeof u === "string" && u).slice(0, 10) : undefined;
+    if (!(content || "").trim() && !mediaUrl && (!urls || urls.length === 0)) {
+      return res.status(400).json({ message: "content or media required" });
+    }
     const post = await storage.createFeedPost(
       req.session.userId!,
       content || "",
-      mediaType || "text",
+      urls && urls.length > 0 ? "image" : (mediaType || "text"),
       mediaUrl,
       audience,
+      urls,
     );
     return res.status(201).json(post);
   });

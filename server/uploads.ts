@@ -2,6 +2,7 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import type { Express, Request, Response, NextFunction } from "express";
+import { storage } from "./storage";
 
 const uploadDir = path.resolve(process.cwd(), "uploads");
 if (!fs.existsSync(uploadDir)) {
@@ -40,18 +41,54 @@ function requireAuth(req: Request, res: Response, next: NextFunction) {
   next();
 }
 
+const VIEW_ONCE_WINDOW_MS = 2 * 60 * 1000;
+
+// Centralized authorization for serving uploaded files. View-once media is
+// only accessible to the sender, or to a thread participant during a short
+// window after they opened it via the open endpoint.
+async function checkFileAccess(userId: string, filename: string): Promise<{ ok: true } | { ok: false; status: number; message: string }> {
+  const viewOnceMsg = await storage.getViewOnceMessageByMediaUrl(`/uploads/${filename}`);
+  if (!viewOnceMsg || viewOnceMsg.senderId === userId) {
+    return { ok: true };
+  }
+  const inThread = await storage.isUserInThread(userId, viewOnceMsg.threadId);
+  if (!inThread) {
+    return { ok: false, status: 403, message: "Not authorized" };
+  }
+  if (!viewOnceMsg.viewedAt) {
+    return { ok: false, status: 403, message: "This photo must be opened from the conversation" };
+  }
+  const openedMs = Date.now() - new Date(viewOnceMsg.viewedAt).getTime();
+  if (openedMs > VIEW_ONCE_WINDOW_MS) {
+    return { ok: false, status: 410, message: "This photo is no longer available" };
+  }
+  return { ok: true };
+}
+
 export function setupUploadRoutes(app: Express) {
   app.use(
     "/uploads",
-    (req, res, next) => {
-      if (!(req.session as any)?.userId) {
+    async (req, res) => {
+      const userId = (req.session as any)?.userId;
+      if (!userId) {
         return res.status(401).json({ message: "Not authenticated" });
       }
-      const filePath = path.join(uploadDir, path.basename(req.path));
-      if (fs.existsSync(filePath)) {
-        return res.sendFile(filePath);
+      const filename = path.basename(req.path);
+      const filePath = path.join(uploadDir, filename);
+      if (!fs.existsSync(filePath)) {
+        return res.status(404).json({ message: "File not found" });
       }
-      res.status(404).json({ message: "File not found" });
+
+      try {
+        const access = await checkFileAccess(userId, filename);
+        if (!access.ok) {
+          return res.status(access.status).json({ message: access.message });
+        }
+      } catch {
+        return res.status(500).json({ message: "Failed to verify file access" });
+      }
+
+      return res.sendFile(filePath);
     },
   );
 
@@ -79,12 +116,22 @@ export function setupUploadRoutes(app: Express) {
     return res.json({ url });
   });
 
-  app.get("/api/download/:filename", requireAuth, (req: Request, res: Response) => {
+  app.get("/api/download/:filename", requireAuth, async (req: Request, res: Response) => {
     const filename = path.basename(req.params.filename);
     const filePath = path.join(uploadDir, filename);
-    if (fs.existsSync(filePath)) {
-      return res.download(filePath, filename);
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ message: "File not found" });
     }
-    res.status(404).json({ message: "File not found" });
+    try {
+      const userId = (req.session as any).userId as string;
+      const viewOnceMsg = await storage.getViewOnceMessageByMediaUrl(`/uploads/${filename}`);
+      // View-once media is never downloadable, except by its sender.
+      if (viewOnceMsg && viewOnceMsg.senderId !== userId) {
+        return res.status(403).json({ message: "Not authorized" });
+      }
+    } catch {
+      return res.status(500).json({ message: "Failed to verify file access" });
+    }
+    return res.download(filePath, filename);
   });
 }

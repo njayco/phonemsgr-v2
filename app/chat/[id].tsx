@@ -1,12 +1,17 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { View, Text, FlatList, TextInput, StyleSheet, Pressable, Platform, KeyboardAvoidingView, ActivityIndicator, Alert, Animated } from 'react-native';
+import { View, Text, FlatList, TextInput, StyleSheet, Pressable, Platform, KeyboardAvoidingView, ActivityIndicator, Alert, Animated, Modal, ScrollView } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import * as ImagePicker from 'expo-image-picker';
+import { Image } from 'expo-image';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { Avatar } from '@/components/Avatar';
-import { apiRequest, queryClient } from '@/lib/query-client';
+import { GifPicker, type GifResult } from '@/components/GifPicker';
+import { ImageViewer } from '@/components/ImageViewer';
+import { apiRequest, queryClient, getApiUrl } from '@/lib/query-client';
+import { uploadFile, type PickedFile } from '@/lib/upload-file';
 import { useAuth } from '@/lib/auth-context';
 import { cacheGet, cacheSet } from '@/lib/local-cache';
 import { sendTyping, sendMessageRead, sendNudge, onWsEvent, offWsEvent } from '@/lib/websocket';
@@ -23,7 +28,16 @@ interface Message {
   isDeleted?: boolean;
   deliveredAt?: string | null;
   readAt?: string | null;
+  mediaType?: 'image' | 'gif' | null;
+  mediaUrl?: string | null;
+  isViewOnce?: boolean;
+  viewedAt?: string | null;
   _optimistic?: boolean;
+}
+
+function resolveMediaUrl(url: string): string {
+  if (url.startsWith('http') || url.startsWith('data:')) return url;
+  return new URL(url, getApiUrl()).toString();
 }
 
 function formatTime(ts: string): string {
@@ -44,8 +58,110 @@ function ReceiptIcon({ status }: { status?: string }) {
   return null;
 }
 
-function MessageBubble({ message, isOwn, onLongPress }: { message: Message; isOwn: boolean; onLongPress?: () => void }) {
+function ViewOnceContent({ message, isOwn, threadId }: { message: Message; isOwn: boolean; threadId: string }) {
+  const [openedUrl, setOpenedUrl] = useState<string | null>(null);
+  const [viewerVisible, setViewerVisible] = useState(false);
+  const [opening, setOpening] = useState(false);
+  const alreadyViewed = !!message.viewedAt;
+
+  const handleOpen = async () => {
+    if (isOwn || opening) return;
+    if (alreadyViewed && !openedUrl) return;
+    if (openedUrl) {
+      setViewerVisible(true);
+      return;
+    }
+    setOpening(true);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    try {
+      const res = await apiRequest('POST', `/api/threads/${threadId}/messages/${message.id}/open`);
+      const data = await res.json();
+      if (data.mediaUrl) {
+        setOpenedUrl(resolveMediaUrl(data.mediaUrl));
+        setViewerVisible(true);
+        queryClient.invalidateQueries({ queryKey: ['/api/threads', threadId, 'messages'] });
+      }
+    } catch {
+      queryClient.invalidateQueries({ queryKey: ['/api/threads', threadId, 'messages'] });
+    } finally {
+      setOpening(false);
+    }
+  };
+
+  if (isOwn) {
+    return (
+      <View style={styles.viewOnceRow}>
+        <View style={styles.viewOnceIconWrap}>
+          <Ionicons name={alreadyViewed ? 'checkmark-done' : 'time-outline'} size={16} color={Colors.dark.accentCyan} />
+        </View>
+        <View>
+          <Text style={styles.viewOnceLabel}>View Once Photo</Text>
+          <Text style={styles.viewOnceSub}>{alreadyViewed ? 'Opened' : 'Not opened yet'}</Text>
+        </View>
+      </View>
+    );
+  }
+
+  const expired = alreadyViewed && !openedUrl;
+
+  return (
+    <>
+      <Pressable style={styles.viewOnceRow} onPress={handleOpen} disabled={expired} testID={`view-once-${message.id}`}>
+        <View style={[styles.viewOnceIconWrap, expired && { opacity: 0.5 }]}>
+          {opening ? (
+            <ActivityIndicator size="small" color={Colors.dark.accentCyan} />
+          ) : (
+            <Ionicons name={expired ? 'eye-off-outline' : 'eye-outline'} size={16} color={Colors.dark.accentCyan} />
+          )}
+        </View>
+        <View>
+          <Text style={styles.viewOnceLabel}>View Once Photo</Text>
+          <Text style={styles.viewOnceSub}>{expired ? 'No longer available' : 'Tap to view — one time only'}</Text>
+        </View>
+      </Pressable>
+      {openedUrl && (
+        <ImageViewer
+          visible={viewerVisible}
+          images={[openedUrl]}
+          onClose={() => {
+            setViewerVisible(false);
+            setOpenedUrl(null);
+            queryClient.invalidateQueries({ queryKey: ['/api/threads', threadId, 'messages'] });
+          }}
+        />
+      )}
+    </>
+  );
+}
+
+function MediaBubbleContent({ message }: { message: Message }) {
+  const [viewerVisible, setViewerVisible] = useState(false);
+  if (!message.mediaUrl) return null;
+  const fullUrl = resolveMediaUrl(message.mediaUrl);
+  const isGif = message.mediaType === 'gif';
+
+  return (
+    <>
+      <Pressable onPress={() => setViewerVisible(true)} testID={`media-message-${message.id}`}>
+        <Image
+          source={{ uri: fullUrl }}
+          style={isGif ? styles.gifMedia : styles.imageMedia}
+          contentFit="cover"
+        />
+        {isGif && (
+          <View style={styles.gifBadge}>
+            <Text style={styles.gifBadgeText}>GIF</Text>
+          </View>
+        )}
+      </Pressable>
+      <ImageViewer visible={viewerVisible} images={[fullUrl]} onClose={() => setViewerVisible(false)} />
+    </>
+  );
+}
+
+function MessageBubble({ message, isOwn, onLongPress, threadId }: { message: Message; isOwn: boolean; onLongPress?: () => void; threadId: string }) {
   const isRedacted = message.isDeleted;
+  const hasMedia = !!message.mediaType && !isRedacted;
 
   return (
     <Pressable
@@ -64,7 +180,14 @@ function MessageBubble({ message, isOwn, onLongPress }: { message: Message; isOw
             <Text style={styles.redactedText}>REDACTED</Text>
           </View>
         ) : (
-          <Text style={styles.bubbleText}>{message.text}</Text>
+          <>
+            {hasMedia && message.isViewOnce ? (
+              <ViewOnceContent message={message} isOwn={isOwn} threadId={threadId} />
+            ) : hasMedia ? (
+              <MediaBubbleContent message={message} />
+            ) : null}
+            {!!message.text && <Text style={[styles.bubbleText, hasMedia && { marginTop: 6 }]}>{message.text}</Text>}
+          </>
         )}
         <View style={styles.bubbleMeta}>
           <Text style={styles.bubbleTime}>
@@ -76,6 +199,9 @@ function MessageBubble({ message, isOwn, onLongPress }: { message: Message; isOw
               <Text style={styles.meshText}>Local Relay</Text>
             </View>
           )}
+          {isOwn && !isRedacted && message.isViewOnce && message.viewedAt ? (
+            <Text style={styles.openedLabel}>Viewed</Text>
+          ) : null}
           {isOwn && !isRedacted && <ReceiptIcon status={message.status} />}
         </View>
       </View>
@@ -107,6 +233,12 @@ export default function ChatScreen() {
   const [typingText, setTypingText] = useState('');
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [nudgeSent, setNudgeSent] = useState(false);
+  const [pendingPhotos, setPendingPhotos] = useState<PickedFile[]>([]);
+  const [captionText, setCaptionText] = useState('');
+  const [viewOnce, setViewOnce] = useState(false);
+  const [sendingPhotos, setSendingPhotos] = useState(false);
+  const [selectedGif, setSelectedGif] = useState<GifResult | null>(null);
+  const [gifPickerVisible, setGifPickerVisible] = useState(false);
   const [nudgeReceived, setNudgeReceived] = useState(false);
   const nudgeCooldownRef = useRef(false);
   const nudgeFlashAnim = useRef(new Animated.Value(0)).current;
@@ -146,12 +278,20 @@ export default function ChatScreen() {
       }
     };
 
+    const handleOpened = (data: any) => {
+      if (data.threadId === id) {
+        queryClient.invalidateQueries({ queryKey: ['/api/threads', id, 'messages'] });
+      }
+    };
+
     onWsEvent('typing', handleTyping);
     onWsEvent('new_message', handleNewMessage);
+    onWsEvent('message_opened', handleOpened);
 
     return () => {
       offWsEvent('typing', handleTyping);
       offWsEvent('new_message', handleNewMessage);
+      offWsEvent('message_opened', handleOpened);
       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
     };
   }, [id, user?.id]);
@@ -224,21 +364,24 @@ export default function ChatScreen() {
   }, [messages, chatCacheKey]);
 
   const sendMutation = useMutation({
-    mutationFn: async (text: string) => {
-      const res = await apiRequest('POST', `/api/threads/${id}/messages`, { text });
+    mutationFn: async (payload: { text: string; mediaType?: string; mediaUrl?: string; isViewOnce?: boolean }) => {
+      const res = await apiRequest('POST', `/api/threads/${id}/messages`, payload);
       return res.json();
     },
-    onMutate: async (text: string) => {
+    onMutate: async (payload: { text: string; mediaType?: string; mediaUrl?: string; isViewOnce?: boolean }) => {
       await queryClient.cancelQueries({ queryKey: ['/api/threads', id, 'messages'] });
       const previous = queryClient.getQueryData<Message[]>(['/api/threads', id, 'messages']);
 
       const tempMsg: Message = {
         id: 'temp-' + Date.now().toString() + Math.random().toString(36).substr(2, 9),
-        text,
+        text: payload.text,
         senderId: user?.id || '',
         createdAt: new Date().toISOString(),
         isDeliveredViaMesh: false,
         status: 'sent',
+        mediaType: (payload.mediaType as any) || null,
+        mediaUrl: payload.mediaUrl || null,
+        isViewOnce: payload.isViewOnce || false,
         _optimistic: true,
       };
 
@@ -294,12 +437,92 @@ export default function ChatScreen() {
   }, [deleteMutation]);
 
   const sendMessage = useCallback(() => {
-    if (!inputText.trim()) return;
+    if (!inputText.trim() && !selectedGif) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     const text = inputText.trim();
     setInputText('');
-    sendMutation.mutate(text);
-  }, [inputText, sendMutation]);
+    if (selectedGif) {
+      const gif = selectedGif;
+      setSelectedGif(null);
+      sendMutation.mutate({ text, mediaType: 'gif', mediaUrl: gif.url });
+    } else {
+      sendMutation.mutate({ text });
+    }
+  }, [inputText, selectedGif, sendMutation]);
+
+  const pickFromLibrary = useCallback(async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsMultipleSelection: true,
+      selectionLimit: 10,
+      quality: 0.8,
+    });
+    if (result.canceled) return;
+    const picked: PickedFile[] = result.assets.map((a, i) => ({
+      uri: a.uri,
+      name: a.fileName || `photo_${Date.now()}_${i}.jpg`,
+      type: a.mimeType || 'image/jpeg',
+    }));
+    setPendingPhotos(picked);
+    setCaptionText('');
+    setViewOnce(false);
+  }, []);
+
+  const takePhoto = useCallback(async () => {
+    const perm = await ImagePicker.requestCameraPermissionsAsync();
+    if (!perm.granted) {
+      Alert.alert('Camera', 'Camera permission is needed to take a photo.');
+      return;
+    }
+    const result = await ImagePicker.launchCameraAsync({ quality: 0.8 });
+    if (result.canceled) return;
+    const a = result.assets[0];
+    setPendingPhotos([{
+      uri: a.uri,
+      name: a.fileName || `photo_${Date.now()}.jpg`,
+      type: a.mimeType || 'image/jpeg',
+    }]);
+    setCaptionText('');
+    setViewOnce(false);
+  }, []);
+
+  const handleAttach = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (Platform.OS === 'web') {
+      pickFromLibrary();
+      return;
+    }
+    Alert.alert('Attach Photo', undefined, [
+      { text: 'Photo Library', onPress: pickFromLibrary },
+      { text: 'Take Photo', onPress: takePhoto },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  }, [pickFromLibrary, takePhoto]);
+
+  const sendPhotos = useCallback(async () => {
+    if (pendingPhotos.length === 0 || sendingPhotos) return;
+    setSendingPhotos(true);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    try {
+      const caption = captionText.trim();
+      for (let i = 0; i < pendingPhotos.length; i++) {
+        const url = await uploadFile(pendingPhotos[i]);
+        await sendMutation.mutateAsync({
+          text: i === 0 ? caption : '',
+          mediaType: 'image',
+          mediaUrl: url,
+          isViewOnce: viewOnce,
+        });
+      }
+      setPendingPhotos([]);
+      setCaptionText('');
+      setViewOnce(false);
+    } catch {
+      Alert.alert('Send failed', 'Could not send photo. Please try again.');
+    } finally {
+      setSendingPhotos(false);
+    }
+  }, [pendingPhotos, captionText, viewOnce, sendingPhotos, sendMutation]);
 
   const handleTextChange = useCallback((text: string) => {
     setInputText(text);
@@ -375,6 +598,7 @@ export default function ChatScreen() {
               message={item}
               isOwn={item.senderId === user?.id}
               onLongPress={() => handleDeleteMessage(item.id)}
+              threadId={id || ''}
             />
           )}
           inverted
@@ -388,9 +612,32 @@ export default function ChatScreen() {
         />
       )}
 
+      {selectedGif && (
+        <View style={styles.gifChipRow}>
+          <Image source={{ uri: selectedGif.previewUrl }} style={styles.gifChipImage} contentFit="cover" />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.gifChipLabel}>GIF attached</Text>
+            <Text style={styles.gifChipSub} numberOfLines={1}>{selectedGif.title || 'Will send with your message'}</Text>
+          </View>
+          <Pressable onPress={() => setSelectedGif(null)} testID="remove-gif">
+            <Ionicons name="close-circle" size={22} color={Colors.dark.textMuted} />
+          </Pressable>
+        </View>
+      )}
+
       <View style={[styles.inputContainer, { paddingBottom: bottomInset + 8 }]}>
-        <Pressable style={styles.attachBtn}>
-          <Ionicons name="add-circle" size={28} color={Colors.dark.textMuted} />
+        <Pressable style={styles.attachBtn} onPress={handleAttach} testID="attach-button">
+          <Ionicons name="add-circle" size={28} color={Colors.dark.accentBlue} />
+        </Pressable>
+        <Pressable
+          style={styles.attachBtn}
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            setGifPickerVisible(true);
+          }}
+          testID="gif-button"
+        >
+          <Ionicons name="happy-outline" size={26} color={Colors.dark.accentCyan} />
         </Pressable>
         <View style={styles.inputWrapper}>
           <TextInput
@@ -405,14 +652,105 @@ export default function ChatScreen() {
           />
         </View>
         <Pressable
-          style={[styles.beamButton, !inputText.trim() && { opacity: 0.4 }]}
+          style={[styles.beamButton, !inputText.trim() && !selectedGif && { opacity: 0.4 }]}
           onPress={sendMessage}
-          disabled={!inputText.trim() || sendMutation.isPending}
+          disabled={(!inputText.trim() && !selectedGif) || sendMutation.isPending}
           testID="beam-send-button"
         >
           <Text style={styles.beamText}>BEAM</Text>
         </Pressable>
       </View>
+
+      <GifPicker
+        visible={gifPickerVisible}
+        onClose={() => setGifPickerVisible(false)}
+        onSelect={(gif) => {
+          setSelectedGif(gif);
+          setGifPickerVisible(false);
+        }}
+      />
+
+      <Modal visible={pendingPhotos.length > 0} transparent animationType="slide" onRequestClose={() => !sendingPhotos && setPendingPhotos([])}>
+        <View style={styles.previewBackdrop}>
+          <View style={styles.previewSheet}>
+            <View style={styles.previewHeader}>
+              <Text style={styles.previewTitle}>
+                {pendingPhotos.length === 1 ? 'Send Photo' : `Send ${pendingPhotos.length} Photos`}
+              </Text>
+              <Pressable onPress={() => !sendingPhotos && setPendingPhotos([])} testID="photo-preview-close">
+                <Ionicons name="close" size={24} color={Colors.dark.textSecondary} />
+              </Pressable>
+            </View>
+
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.previewStrip}>
+              {pendingPhotos.map((p, i) => (
+                <View key={`${p.uri}-${i}`}>
+                  <Image source={{ uri: p.uri }} style={styles.previewImage} contentFit="cover" />
+                  {pendingPhotos.length > 1 && (
+                    <Pressable
+                      style={styles.previewRemove}
+                      onPress={() => setPendingPhotos((prev) => prev.filter((_, j) => j !== i))}
+                    >
+                      <Ionicons name="close-circle" size={20} color="#FFFFFF" />
+                    </Pressable>
+                  )}
+                </View>
+              ))}
+            </ScrollView>
+
+            <TextInput
+              style={styles.captionInput}
+              value={captionText}
+              onChangeText={setCaptionText}
+              placeholder="Add a caption (optional)..."
+              placeholderTextColor={Colors.dark.textMuted}
+              maxLength={500}
+              testID="caption-input"
+            />
+
+            <View style={styles.privacyOptions}>
+              <Pressable
+                style={[styles.privacyOption, !viewOnce && styles.privacyOptionActive]}
+                onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setViewOnce(false); }}
+                testID="leave-in-chat-option"
+              >
+                <Ionicons name="chatbubbles-outline" size={18} color={!viewOnce ? Colors.dark.accentBlue : Colors.dark.textMuted} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.privacyLabel, !viewOnce && { color: Colors.dark.accentBlue }]}>Leave in Chat</Text>
+                  <Text style={styles.privacySub}>Photo stays visible in the conversation</Text>
+                </View>
+                {!viewOnce && <Ionicons name="checkmark-circle" size={18} color={Colors.dark.accentBlue} />}
+              </Pressable>
+              <Pressable
+                style={[styles.privacyOption, viewOnce && styles.privacyOptionActiveCyan]}
+                onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setViewOnce(true); }}
+                testID="view-once-option"
+              >
+                <Ionicons name="eye-outline" size={18} color={viewOnce ? Colors.dark.accentCyan : Colors.dark.textMuted} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.privacyLabel, viewOnce && { color: Colors.dark.accentCyan }]}>View Once</Text>
+                  <Text style={styles.privacySub}>Recipient can open the photo one time only</Text>
+                </View>
+                {viewOnce && <Ionicons name="checkmark-circle" size={18} color={Colors.dark.accentCyan} />}
+              </Pressable>
+            </View>
+
+            <Pressable
+              style={[styles.previewSendBtn, sendingPhotos && { opacity: 0.6 }]}
+              onPress={sendPhotos}
+              disabled={sendingPhotos}
+              testID="send-photos-button"
+            >
+              {sendingPhotos ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <Ionicons name="send" size={16} color="#FFFFFF" />
+              )}
+              <Text style={styles.previewSendText}>{sendingPhotos ? 'Sending...' : 'BEAM'}</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -476,4 +814,33 @@ const styles = StyleSheet.create({
     borderBottomColor: '#FF4444',
   },
   nudgeBannerText: { fontSize: 13, fontFamily: 'Inter_600SemiBold', color: Colors.dark.accentGreen },
+  imageMedia: { width: 220, height: 220, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.06)' },
+  gifMedia: { width: 220, height: 160, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.06)' },
+  gifBadge: { position: 'absolute', top: 6, left: 6, backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 },
+  gifBadgeText: { fontSize: 9, fontFamily: 'Inter_700Bold', color: '#FFFFFF', letterSpacing: 1 },
+  openedLabel: { fontSize: 9, fontFamily: 'Inter_600SemiBold', color: Colors.dark.accentCyan },
+  viewOnceRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 6, paddingRight: 8, minWidth: 180 },
+  viewOnceIconWrap: { width: 36, height: 36, borderRadius: 18, borderWidth: 1.5, borderColor: Colors.dark.accentCyan, alignItems: 'center', justifyContent: 'center' },
+  viewOnceLabel: { fontSize: 13, fontFamily: 'Inter_600SemiBold', color: '#FFFFFF' },
+  viewOnceSub: { fontSize: 11, fontFamily: 'Inter_400Regular', color: 'rgba(255,255,255,0.6)' },
+  gifChipRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 8, borderTopWidth: 1, borderTopColor: Colors.dark.separator, backgroundColor: Colors.dark.surfaceElevated },
+  gifChipImage: { width: 44, height: 44, borderRadius: 8 },
+  gifChipLabel: { fontSize: 12, fontFamily: 'Inter_600SemiBold', color: Colors.dark.accentCyan },
+  gifChipSub: { fontSize: 11, fontFamily: 'Inter_400Regular', color: Colors.dark.textMuted },
+  previewBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
+  previewSheet: { backgroundColor: Colors.dark.background, borderTopLeftRadius: 20, borderTopRightRadius: 20, borderWidth: 1, borderColor: Colors.dark.glassBorder, padding: 16, paddingBottom: Platform.OS === 'web' ? 24 : 40, gap: 14 },
+  previewHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  previewTitle: { fontSize: 16, fontFamily: 'Inter_600SemiBold', color: Colors.dark.text },
+  previewStrip: { gap: 10 },
+  previewImage: { width: 140, height: 140, borderRadius: 12, backgroundColor: Colors.dark.surfaceElevated },
+  previewRemove: { position: 'absolute', top: 4, right: 4, backgroundColor: 'rgba(0,0,0,0.5)', borderRadius: 10 },
+  captionInput: { backgroundColor: Colors.dark.inputBackground, borderRadius: 12, borderWidth: 1, borderColor: Colors.dark.glassBorder, paddingHorizontal: 14, paddingVertical: 10, fontSize: 14, fontFamily: 'Inter_400Regular', color: Colors.dark.text },
+  privacyOptions: { gap: 8 },
+  privacyOption: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderRadius: 12, backgroundColor: Colors.dark.surfaceElevated, borderWidth: 1, borderColor: 'transparent' },
+  privacyOptionActive: { borderColor: Colors.dark.accentBlue },
+  privacyOptionActiveCyan: { borderColor: Colors.dark.accentCyan },
+  privacyLabel: { fontSize: 13, fontFamily: 'Inter_600SemiBold', color: Colors.dark.text },
+  privacySub: { fontSize: 11, fontFamily: 'Inter_400Regular', color: Colors.dark.textMuted },
+  previewSendBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: Colors.dark.accentBlue, borderRadius: 14, paddingVertical: 13 },
+  previewSendText: { fontSize: 14, fontFamily: 'Inter_700Bold', color: '#FFFFFF', letterSpacing: 1 },
 });

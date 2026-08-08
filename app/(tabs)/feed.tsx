@@ -12,6 +12,7 @@ import { apiRequest, queryClient, getApiUrl } from '@/lib/query-client';
 import { useAuth } from '@/lib/auth-context';
 import { useUpload } from '@/lib/upload-context';
 import { cacheGet, cacheSet } from '@/lib/local-cache';
+import { ImageViewer } from '@/components/ImageViewer';
 import Colors from '@/constants/colors';
 import { fetch } from 'expo/fetch';
 
@@ -23,6 +24,7 @@ interface FeedPostData {
   content: string;
   mediaType: 'text' | 'image' | 'video' | 'audio' | 'document';
   mediaUrl?: string;
+  mediaUrls?: string[] | null;
   timestamp: number;
   kindnessEarned: number;
   likes: number;
@@ -81,11 +83,47 @@ function getDownloadUrl(mediaUrl: string): string {
   return new URL(`/api/download/${filename}`, base).toString();
 }
 
-function ImageMedia({ mediaUrl }: { mediaUrl: string }) {
-  const fullUrl = getFullMediaUrl(mediaUrl);
+function ImageMedia({ mediaUrls }: { mediaUrls: string[] }) {
+  const [viewerIndex, setViewerIndex] = useState<number | null>(null);
+  const fullUrls = mediaUrls.map(getFullMediaUrl);
+  const count = fullUrls.length;
+
+  const openViewer = (i: number) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setViewerIndex(i);
+  };
+
   return (
-    <View style={mediaStyles.imageContainer}>
-      <Image source={{ uri: fullUrl }} style={mediaStyles.image} resizeMode="cover" />
+    <View>
+      {count === 1 ? (
+        <Pressable style={mediaStyles.imageContainer} onPress={() => openViewer(0)} testID="feed-image-0">
+          <Image source={{ uri: fullUrls[0] }} style={mediaStyles.image} resizeMode="cover" />
+        </Pressable>
+      ) : (
+        <View style={mediaStyles.gridContainer}>
+          {fullUrls.slice(0, 4).map((url, i) => (
+            <Pressable
+              key={`${url}-${i}`}
+              style={[mediaStyles.gridItem, count === 2 && { width: '49.2%' }, count === 3 && i === 0 && { width: '100%' }]}
+              onPress={() => openViewer(i)}
+              testID={`feed-image-${i}`}
+            >
+              <Image source={{ uri: url }} style={mediaStyles.gridImage} resizeMode="cover" />
+              {i === 3 && count > 4 && (
+                <View style={mediaStyles.moreOverlay}>
+                  <Text style={mediaStyles.moreText}>+{count - 4}</Text>
+                </View>
+              )}
+            </Pressable>
+          ))}
+        </View>
+      )}
+      <ImageViewer
+        visible={viewerIndex !== null}
+        images={fullUrls}
+        initialIndex={viewerIndex ?? 0}
+        onClose={() => setViewerIndex(null)}
+      />
     </View>
   );
 }
@@ -252,7 +290,9 @@ function MediaContent({ post }: { post: FeedPostData }) {
 
   return (
     <View>
-      {post.mediaType === 'image' && <ImageMedia mediaUrl={post.mediaUrl} />}
+      {post.mediaType === 'image' && (
+        <ImageMedia mediaUrls={post.mediaUrls && post.mediaUrls.length > 0 ? post.mediaUrls : [post.mediaUrl]} />
+      )}
       {post.mediaType === 'video' && <VideoMedia mediaUrl={post.mediaUrl} />}
       {post.mediaType === 'audio' && <AudioMedia mediaUrl={post.mediaUrl} title={post.content} />}
       {post.mediaType === 'document' && <DocumentMedia mediaUrl={post.mediaUrl} content={post.content} />}
@@ -819,6 +859,11 @@ export default function FeedScreen() {
 const mediaStyles = StyleSheet.create({
   imageContainer: { borderRadius: 12, overflow: 'hidden' },
   image: { width: '100%', height: 200, borderRadius: 12 },
+  gridContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, borderRadius: 12, overflow: 'hidden' },
+  gridItem: { width: '48.8%', flexGrow: 1, aspectRatio: 1.3, borderRadius: 8, overflow: 'hidden' },
+  gridImage: { width: '100%', height: '100%' },
+  moreOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center' },
+  moreText: { fontSize: 20, fontFamily: 'Inter_700Bold', color: '#FFFFFF' },
   videoContainer: { borderRadius: 12, overflow: 'hidden', height: 200, backgroundColor: '#000' },
   video: { width: '100%', height: '100%' },
   playOverlay: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.35)' },

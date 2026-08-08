@@ -92,6 +92,10 @@ export function connectWebSocket(userId: string) {
           queryClient.invalidateQueries({ queryKey: ['/api/threads', data.threadId, 'messages'] });
         }
 
+        if (data.type === 'message_opened') {
+          queryClient.invalidateQueries({ queryKey: ['/api/threads', data.threadId, 'messages'] });
+        }
+
         if (data.type === 'message_deleted') {
           queryClient.invalidateQueries({ queryKey: ['/api/threads', data.threadId, 'messages'] });
           queryClient.invalidateQueries({ queryKey: ['/api/threads'] });

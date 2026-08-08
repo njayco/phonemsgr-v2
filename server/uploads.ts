@@ -124,20 +124,29 @@ export function setupUploadRoutes(app: Express) {
   app.use(
     "/uploads",
     async (req, res) => {
-      const userId = (req.session as any)?.userId;
-      if (!userId) {
-        return res.status(401).json({ message: "Not authenticated" });
-      }
       const filename = path.basename(req.path);
       const filePath = path.join(uploadDir, filename);
       if (!fs.existsSync(filePath)) {
         return res.status(404).json({ message: "File not found" });
       }
 
+      // View-once files are always protected: only the sender may retrieve
+      // them directly (recipients use the /api/threads/:id/messages/:id/open
+      // endpoint which delivers the data inline and marks the message viewed).
+      // Regular uploaded files (avatars, chat photos, feed photos) are served
+      // without a session check — the filename contains a timestamp + random
+      // component making enumeration infeasible, and Image components in
+      // React Native/Expo do not forward cookies.
       try {
-        const access = await checkFileAccess(userId, filename);
-        if (!access.ok) {
-          return res.status(access.status).json({ message: access.message });
+        const viewOnceMsg = await storage.getViewOnceMessageByMediaUrl(`/uploads/${filename}`);
+        if (viewOnceMsg) {
+          const userId = (req.session as any)?.userId;
+          if (!userId) {
+            return res.status(401).json({ message: "Not authenticated" });
+          }
+          if (viewOnceMsg.senderId !== userId) {
+            return res.status(403).json({ message: "This photo can only be opened from the conversation" });
+          }
         }
       } catch {
         return res.status(500).json({ message: "Failed to verify file access" });

@@ -1,0 +1,69 @@
+Phone Msgr — Direct to Talk
+Feature Overview
+Direct to Talk is Phone Msgr’s real-time, walkie-talkie-style voice communication feature built directly into the Instant Messaging experience.
+Instead of placing a traditional phone or voice call, two users can instantly communicate by voice while remaining inside their existing Phone Msgr chat window.
+Direct to Talk is designed around a simple interaction:
+Activate → Hold → Talk → Release → Listen
+Only one person can speak at a time, creating the fast, familiar experience of using a two-way radio.
+Activating Direct to Talk
+While inside the Instant Messaging chat window of the person the user wants to communicate with, the user can activate Direct to Talk in two ways.
+Power Button Activation
+The intended hardware shortcut is:
+Double-press the phone's power/side button while inside the conversation.
+When Phone Msgr detects the supported shortcut:
+Direct to Talk activates.
+The designated Direct to Talk activation sound effect plays.
+The chat interface transitions into Direct to Talk mode.
+A prominent status indicator displays:
+READY
+This tells the user that the Direct to Talk connection is active and ready for voice communication.
+Hardware-button functionality should only be implemented on operating systems/devices where the platform permits an app to detect or use that interaction. Phone Msgr should not interfere with system-level emergency, accessibility, wallet, lock-screen, or other protected power-button functions.
+On-Screen Activation
+Direct to Talk must also have a dedicated Direct to Talk button inside the Instant Messaging interface.
+Tapping this button activates the same experience as the hardware shortcut.
+This provides a universal alternative for users whose phones or operating systems do not allow Phone Msgr to use the power/side button.
+Push to Talk
+Once Direct to Talk is active and the user's display says READY, the user can begin speaking.
+The intended hardware interaction is:
+Press and hold the power/side button → Talk
+Release the power/side button → Stop talking
+The user's voice should be transmitted in real time while the button is being held.
+Releasing the button immediately ends the transmission and makes the channel available to the other participant.
+On-Screen Talk Button
+Phone Msgr must also provide a large on-screen TALK button.
+The user presses and holds the TALK button while speaking and releases it when finished.
+This button should function identically to the hardware-button interaction:
+Hold TALK → Transmit voice
+Release TALK → Stop transmitting
+The on-screen TALK control serves as both an accessibility feature and the primary fallback whenever hardware-button functionality is unavailable.
+One Person Talks at a Time
+Direct to Talk operates as a half-duplex voice system, similar to a traditional walkie-talkie.
+Only one participant can transmit audio at a time.
+When User A begins speaking, Phone Msgr temporarily reserves the voice channel for User A.
+User A's screen should indicate that they are transmitting, for example:
+TALKING
+At the same time, User B's screen displays:
+LISTEN
+User B hears User A's voice in real time but cannot begin transmitting until User A releases the talk control.
+When User A releases the button, the channel becomes available again.
+The interface returns to:
+READY
+Either participant can then take the channel and speak.
+Direct to Talk Status System
+The interface should make the state of the conversation immediately understandable.
+READY
+The Direct to Talk connection is active and neither person is currently speaking.
+TALKING
+The current user is transmitting audio.
+LISTEN
+The other participant is currently transmitting and the user should listen.
+CONNECTING
+Phone Msgr is establishing the real-time voice connection.
+OFFLINE / UNAVAILABLE
+The other participant cannot currently receive a Direct to Talk transmission.
+ENDED
+The Direct to Talk session has ended.
+These states should use clear visual transitions so users can understand what is happening without reading lengthy instructions.
+Sound Effects
+The attached Direct to Talk sound effect should become part of the feature's identity.
+The activation sound should play when Direct to Talk successfully enters READY mode.

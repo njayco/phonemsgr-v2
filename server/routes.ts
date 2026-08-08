@@ -1,8 +1,6 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "node:http";
-import session from "express-session";
-import connectPgSimple from "connect-pg-simple";
-import { pool } from "./db";
+import { sessionMiddleware } from "./session";
 import { storage } from "./storage";
 import { hashPassword, comparePasswords } from "./auth";
 import { registerSchema, loginSchema } from "@shared/schema";
@@ -10,12 +8,6 @@ import { setupWebSocket, broadcastToUser, isUserOnlineWs } from "./websocket";
 import { seedDatabase } from "./seed";
 import { sendPushToUser } from "./push";
 import { readUploadAsDataUri, scheduleViewOnceDeletion } from "./uploads";
-
-declare module "express-session" {
-  interface SessionData {
-    userId: string;
-  }
-}
 
 // Express 5 types route params as `string | string[]` (arrays occur only with
 // wildcard/repeating patterns, which none of our routes use). This helper
@@ -32,26 +24,7 @@ function requireAuth(req: Request, res: Response, next: NextFunction) {
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  const PgStore = connectPgSimple(session);
-
-  const isProduction = process.env.NODE_ENV === "production";
-  app.use(
-    session({
-      store: new PgStore({
-        pool: pool,
-        createTableIfMissing: true,
-      }),
-      secret: process.env.SESSION_SECRET || "phone-msgr-secret-key-2026",
-      resave: false,
-      saveUninitialized: false,
-      cookie: {
-        maxAge: 30 * 24 * 60 * 60 * 1000,
-        httpOnly: true,
-        secure: isProduction,
-        sameSite: isProduction ? "none" as const : "lax" as const,
-      },
-    }),
-  );
+  app.use(sessionMiddleware);
 
   await seedDatabase();
 

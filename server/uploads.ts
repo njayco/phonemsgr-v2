@@ -84,7 +84,7 @@ function deleteUploadFileByMediaUrl(mediaUrl: string): void {
 // timer fires.
 export function scheduleViewOnceDeletion(mediaUrl: string): void {
   const timer = setTimeout(() => deleteUploadFileByMediaUrl(mediaUrl), VIEW_ONCE_WINDOW_MS);
-  timer.unref?.();
+  (timer as unknown as { unref?: () => void }).unref?.();
 }
 
 // Periodic sweep: delete files for view-once messages whose viewing window
@@ -106,7 +106,7 @@ async function sweepExpiredViewOnceFiles(): Promise<void> {
 export function startViewOnceCleanup(): void {
   sweepExpiredViewOnceFiles();
   const interval = setInterval(sweepExpiredViewOnceFiles, 60 * 1000);
-  interval.unref?.();
+  (interval as unknown as { unref?: () => void }).unref?.();
 }
 
 // Centralized authorization for serving uploaded files. View-once media

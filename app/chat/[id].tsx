@@ -9,6 +9,7 @@ import { Image } from 'expo-image';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { Avatar } from '@/components/Avatar';
 import { GifPicker, type GifResult } from '@/components/GifPicker';
+import { DirectToTalk } from '@/components/DirectToTalk';
 import { ImageViewer } from '@/components/ImageViewer';
 import { apiRequest, queryClient, getApiUrl } from '@/lib/query-client';
 import { uploadFile, type PickedFile } from '@/lib/upload-file';
@@ -240,6 +241,7 @@ export default function ChatScreen() {
   const [selectedGif, setSelectedGif] = useState<GifResult | null>(null);
   const [gifPickerVisible, setGifPickerVisible] = useState(false);
   const [nudgeReceived, setNudgeReceived] = useState(false);
+  const [dttActive, setDttActive] = useState(false);
   const nudgeCooldownRef = useRef(false);
   const nudgeFlashAnim = useRef(new Animated.Value(0)).current;
 
@@ -284,14 +286,23 @@ export default function ChatScreen() {
       }
     };
 
+    // Peer activated Direct to Talk in this thread — join them automatically
+    const handleDttInvite = (data: any) => {
+      if (data.threadId === id) {
+        setDttActive(true);
+      }
+    };
+
     onWsEvent('typing', handleTyping);
     onWsEvent('new_message', handleNewMessage);
     onWsEvent('message_opened', handleOpened);
+    onWsEvent('dtt_invite', handleDttInvite);
 
     return () => {
       offWsEvent('typing', handleTyping);
       offWsEvent('new_message', handleNewMessage);
       offWsEvent('message_opened', handleOpened);
+      offWsEvent('dtt_invite', handleDttInvite);
       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
     };
   }, [id, user?.id]);
@@ -577,6 +588,16 @@ export default function ChatScreen() {
             </View>
           </View>
         </View>
+        <Pressable
+          style={styles.moreBtn}
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            setDttActive(true);
+          }}
+          testID="dtt-activate"
+        >
+          <Ionicons name="radio" size={22} color={dttActive ? Colors.dark.accentCyan : Colors.dark.textSecondary} />
+        </Pressable>
         <Pressable style={styles.moreBtn}>
           <Ionicons name="ellipsis-vertical" size={20} color={Colors.dark.textSecondary} />
         </Pressable>
@@ -660,6 +681,15 @@ export default function ChatScreen() {
           <Text style={styles.beamText}>BEAM</Text>
         </Pressable>
       </View>
+
+      {dttActive && id && user?.id && (
+        <DirectToTalk
+          threadId={id}
+          peerName={name || 'Contact'}
+          userId={user.id}
+          onClose={() => setDttActive(false)}
+        />
+      )}
 
       <GifPicker
         visible={gifPickerVisible}

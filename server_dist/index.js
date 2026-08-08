@@ -9,6 +9,8 @@ import express from "express";
 
 // server/routes.ts
 import { createServer } from "node:http";
+
+// server/session.ts
 import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
 
@@ -309,8 +311,27 @@ var pool = new pg.Pool({
 });
 var db = drizzle(pool, { schema: schema_exports });
 
+// server/session.ts
+var PgStore = connectPgSimple(session);
+var isProduction = process.env.NODE_ENV === "production";
+var sessionMiddleware = session({
+  store: new PgStore({
+    pool,
+    createTableIfMissing: true
+  }),
+  secret: process.env.SESSION_SECRET || "phone-msgr-secret-key-2026",
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    maxAge: 30 * 24 * 60 * 60 * 1e3,
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: isProduction ? "none" : "lax"
+  }
+});
+
 // server/storage.ts
-import { eq, and, desc, sql as sql2, ne, inArray, or, ilike, isNull } from "drizzle-orm";
+import { eq, and, desc, sql as sql2, ne, inArray, or, ilike, isNull, isNotNull, lt } from "drizzle-orm";
 var DatabaseStorage = class {
   async getUser(id) {
     const [user] = await db.select().from(users).where(eq(users.id, id));
@@ -442,6 +463,17 @@ var DatabaseStorage = class {
   async getViewOnceMessageByMediaUrl(mediaUrl) {
     const [msg] = await db.select().from(messages).where(and(eq(messages.mediaUrl, mediaUrl), eq(messages.isViewOnce, true)));
     return msg;
+  }
+  async getExpiredViewOnceMediaUrls(cutoff) {
+    const rows = await db.select({ mediaUrl: messages.mediaUrl }).from(messages).where(
+      and(
+        eq(messages.isViewOnce, true),
+        isNotNull(messages.mediaUrl),
+        isNotNull(messages.viewedAt),
+        lt(messages.viewedAt, cutoff)
+      )
+    );
+    return rows.map((r) => r.mediaUrl).filter(Boolean);
   }
   async markMessagesRead(threadId, userId) {
     await db.update(threadParticipants).set({ unreadCount: 0, lastReadAt: /* @__PURE__ */ new Date() }).where(
@@ -1061,6 +1093,51 @@ async function comparePasswords(supplied, stored) {
 // server/websocket.ts
 import { WebSocketServer, WebSocket } from "ws";
 var clients = /* @__PURE__ */ new Map();
+var dttSessions = /* @__PURE__ */ new Map();
+function dttBroadcast(session2, payload, exceptUserId) {
+  const data = JSON.stringify(payload);
+  for (const pid of session2.participants) {
+    if (pid === exceptUserId) continue;
+    const userClients = clients.get(pid);
+    if (!userClients) continue;
+    for (const client of userClients) {
+      if (client.ws.readyState === WebSocket.OPEN) {
+        client.ws.send(data);
+      }
+    }
+  }
+}
+function dttPruneSession(threadId, session2) {
+  for (const pid of Array.from(session2.participants)) {
+    const bound = session2.sockets.get(pid);
+    const boundDead = bound !== void 0 && bound.readyState !== WebSocket.OPEN;
+    if (!isUserOnlineWs(pid) || boundDead) {
+      session2.participants.delete(pid);
+      session2.sockets.delete(pid);
+      if (session2.speakerId === pid) session2.speakerId = null;
+    }
+  }
+  if (session2.speakerId && !isUserOnlineWs(session2.speakerId)) {
+    session2.speakerId = null;
+  }
+  if (session2.participants.size === 0) dttSessions.delete(threadId);
+}
+function dttRemoveUser(threadId, userId) {
+  const session2 = dttSessions.get(threadId);
+  if (!session2 || !session2.participants.has(userId)) return;
+  session2.participants.delete(userId);
+  session2.sockets.delete(userId);
+  if (session2.draining?.userId === userId) session2.draining = null;
+  if (session2.speakerId === userId) {
+    session2.speakerId = null;
+    dttBroadcast(session2, { type: "dtt_talk_end", threadId, userId });
+  }
+  if (session2.participants.size === 0) {
+    dttSessions.delete(threadId);
+  } else {
+    dttBroadcast(session2, { type: "dtt_peer_left", threadId, userId });
+  }
+}
 function broadcastToUser(userId, payload) {
   const userClients = clients.get(userId);
   if (!userClients) return;
@@ -1077,21 +1154,44 @@ function isUserOnlineWs(userId) {
 }
 function setupWebSocket(server) {
   const wss = new WebSocketServer({ server, path: "/ws" });
+  const heartbeat = setInterval(() => {
+    for (const ws of wss.clients) {
+      const w = ws;
+      if (w.isAlive === false) {
+        w.terminate();
+        continue;
+      }
+      w.isAlive = false;
+      w.ping();
+    }
+  }, 1e4);
+  heartbeat.unref?.();
+  wss.on("close", () => clearInterval(heartbeat));
   wss.on("connection", (ws, req) => {
+    ws.isAlive = true;
+    ws.on("pong", () => {
+      ws.isAlive = true;
+    });
     let userId = "";
+    sessionMiddleware(req, {}, () => {
+      const sessionUserId = req.session?.userId;
+      if (!sessionUserId || ws.readyState !== WebSocket.OPEN) {
+        ws.close(4401, "unauthenticated");
+        return;
+      }
+      userId = sessionUserId;
+      if (!clients.has(userId)) {
+        clients.set(userId, []);
+      }
+      clients.get(userId).push({ ws, userId });
+      storage.setUserOnline(userId, true).catch(() => {
+      });
+      ws.send(JSON.stringify({ type: "connected", userId }));
+    });
     ws.on("message", (data) => {
+      if (!userId) return;
       try {
         const msg = JSON.parse(data.toString());
-        if (msg.type === "auth" && msg.userId) {
-          userId = msg.userId;
-          if (!clients.has(userId)) {
-            clients.set(userId, []);
-          }
-          clients.get(userId).push({ ws, userId });
-          storage.setUserOnline(userId, true).catch(() => {
-          });
-          ws.send(JSON.stringify({ type: "connected", userId }));
-        }
         if (msg.type === "typing" && userId && msg.threadId) {
           broadcastToThreadExcept(msg.threadId, userId, {
             type: "typing",
@@ -1121,6 +1221,83 @@ function setupWebSocket(server) {
             }
           }).catch(() => {
           });
+        }
+        if (msg.type === "dtt_join" && userId && msg.threadId) {
+          const threadId = msg.threadId;
+          storage.getThreadParticipantIds(threadId).then((participantIds) => {
+            if (!participantIds.includes(userId)) return;
+            let session2 = dttSessions.get(threadId);
+            if (session2) dttPruneSession(threadId, session2);
+            session2 = dttSessions.get(threadId);
+            if (!session2) {
+              session2 = { participants: /* @__PURE__ */ new Set(), speakerId: null, sockets: /* @__PURE__ */ new Map(), draining: null };
+              dttSessions.set(threadId, session2);
+            }
+            const isNew = !session2.participants.has(userId);
+            session2.participants.add(userId);
+            session2.sockets.set(userId, ws);
+            if (session2.speakerId === userId) {
+              session2.speakerId = null;
+            }
+            const peerIds = participantIds.filter((p) => p !== userId);
+            const peerOnline = peerIds.some((p) => {
+              const c = clients.get(p);
+              return !!c && c.length > 0;
+            });
+            broadcastToUser(userId, {
+              type: "dtt_state",
+              threadId,
+              speakerId: session2.speakerId,
+              participants: Array.from(session2.participants),
+              peerOnline
+            });
+            if (isNew) {
+              dttBroadcast(session2, { type: "dtt_peer_joined", threadId, userId }, userId);
+            }
+            for (const pid of peerIds) {
+              broadcastToUser(pid, { type: "dtt_invite", threadId, fromUserId: userId });
+            }
+          }).catch(() => {
+          });
+        }
+        if (msg.type === "dtt_talk_start" && userId && msg.threadId) {
+          const session2 = dttSessions.get(msg.threadId);
+          if (session2 && session2.participants.has(userId)) {
+            if (session2.speakerId === null || session2.speakerId === userId) {
+              session2.speakerId = userId;
+              session2.sockets.set(userId, ws);
+              if (session2.draining?.userId !== userId) session2.draining = null;
+              broadcastToUser(userId, { type: "dtt_talk_granted", threadId: msg.threadId, userId });
+              dttBroadcast(session2, { type: "dtt_talk_start", threadId: msg.threadId, userId });
+            } else {
+              broadcastToUser(userId, { type: "dtt_denied", threadId: msg.threadId, speakerId: session2.speakerId });
+            }
+          }
+        }
+        if (msg.type === "dtt_audio" && userId && msg.threadId && typeof msg.data === "string" && msg.data.length < 6e5) {
+          const session2 = dttSessions.get(msg.threadId);
+          const inDrain = !!session2 && session2.speakerId === null && session2.draining !== null && session2.draining.userId === userId && Date.now() < session2.draining.until && session2.participants.has(userId);
+          if (session2 && (session2.speakerId === userId || inDrain)) {
+            dttBroadcast(session2, {
+              type: "dtt_audio",
+              threadId: msg.threadId,
+              userId,
+              seq: msg.seq,
+              mime: msg.mime,
+              data: msg.data
+            }, userId);
+          }
+        }
+        if (msg.type === "dtt_talk_end" && userId && msg.threadId) {
+          const session2 = dttSessions.get(msg.threadId);
+          if (session2 && session2.speakerId === userId) {
+            session2.speakerId = null;
+            session2.draining = { userId, until: Date.now() + 2e3 };
+            dttBroadcast(session2, { type: "dtt_talk_end", threadId: msg.threadId, userId });
+          }
+        }
+        if (msg.type === "dtt_leave" && userId && msg.threadId) {
+          dttRemoveUser(msg.threadId, userId);
         }
         if (msg.type === "message_read" && userId && msg.threadId) {
           storage.markMessagesRead(msg.threadId, userId).then((senderIds) => {
@@ -1152,6 +1329,11 @@ function setupWebSocket(server) {
             });
           } else {
             clients.set(userId, filtered);
+          }
+        }
+        for (const [threadId, session2] of dttSessions) {
+          if (session2.participants.has(userId) && session2.sockets.get(userId) === ws) {
+            dttRemoveUser(threadId, userId);
           }
         }
       }
@@ -1487,6 +1669,41 @@ function readUploadAsDataUri(mediaUrl) {
   const data = fs.readFileSync(filePath);
   return `data:${mime};base64,${data.toString("base64")}`;
 }
+var VIEW_ONCE_WINDOW_MS = 2 * 60 * 1e3;
+function deleteUploadFileByMediaUrl(mediaUrl) {
+  const filename = path.basename(mediaUrl);
+  const filePath = path.join(uploadDir, filename);
+  try {
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+      console.log(`[view-once] deleted expired file ${filename}`);
+    }
+  } catch (err) {
+    console.error(`[view-once] failed to delete ${filename}:`, err);
+  }
+}
+function scheduleViewOnceDeletion(mediaUrl) {
+  const timer = setTimeout(() => deleteUploadFileByMediaUrl(mediaUrl), VIEW_ONCE_WINDOW_MS);
+  timer.unref?.();
+}
+async function sweepExpiredViewOnceFiles() {
+  try {
+    const cutoff = new Date(Date.now() - VIEW_ONCE_WINDOW_MS);
+    const mediaUrls = await storage.getExpiredViewOnceMediaUrls(cutoff);
+    for (const mediaUrl of mediaUrls) {
+      if (mediaUrl.startsWith("/uploads/")) {
+        deleteUploadFileByMediaUrl(mediaUrl);
+      }
+    }
+  } catch (err) {
+    console.error("[view-once] sweep failed:", err);
+  }
+}
+function startViewOnceCleanup() {
+  sweepExpiredViewOnceFiles();
+  const interval = setInterval(sweepExpiredViewOnceFiles, 60 * 1e3);
+  interval.unref?.();
+}
 async function checkFileAccess(userId, filename) {
   const viewOnceMsg = await storage.getViewOnceMessageByMediaUrl(`/uploads/${filename}`);
   if (!viewOnceMsg || viewOnceMsg.senderId === userId) {
@@ -1559,6 +1776,9 @@ function setupUploadRoutes(app2) {
 }
 
 // server/routes.ts
+function params(req) {
+  return req.params;
+}
 function requireAuth2(req, res, next) {
   if (!req.session.userId) {
     return res.status(401).json({ message: "Not authenticated" });
@@ -1566,25 +1786,7 @@ function requireAuth2(req, res, next) {
   next();
 }
 async function registerRoutes(app2) {
-  const PgStore = connectPgSimple(session);
-  const isProduction = process.env.NODE_ENV === "production";
-  app2.use(
-    session({
-      store: new PgStore({
-        pool,
-        createTableIfMissing: true
-      }),
-      secret: process.env.SESSION_SECRET || "phone-msgr-secret-key-2026",
-      resave: false,
-      saveUninitialized: false,
-      cookie: {
-        maxAge: 30 * 24 * 60 * 60 * 1e3,
-        httpOnly: true,
-        secure: isProduction,
-        sameSite: isProduction ? "none" : "lax"
-      }
-    })
-  );
+  app2.use(sessionMiddleware);
   await seedDatabase();
   app2.post("/api/auth/register", async (req, res) => {
     try {
@@ -1664,7 +1866,7 @@ async function registerRoutes(app2) {
     return res.json({ ...safeUser, interests, badges, education, isOnline: true });
   });
   app2.get("/api/profile/:id", requireAuth2, async (req, res) => {
-    const user = await storage.getUser(req.params.id);
+    const user = await storage.getUser(params(req).id);
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
@@ -1709,21 +1911,21 @@ async function registerRoutes(app2) {
     return res.json(edu);
   });
   app2.patch("/api/education/:id", requireAuth2, async (req, res) => {
-    const edu = await storage.updateEducation(req.params.id, req.session.userId, req.body);
+    const edu = await storage.updateEducation(params(req).id, req.session.userId, req.body);
     if (!edu) {
       return res.status(404).json({ message: "Education entry not found" });
     }
     return res.json(edu);
   });
   app2.delete("/api/education/:id", requireAuth2, async (req, res) => {
-    const deleted = await storage.deleteEducation(req.params.id, req.session.userId);
+    const deleted = await storage.deleteEducation(params(req).id, req.session.userId);
     if (!deleted) {
       return res.status(404).json({ message: "Education entry not found" });
     }
     return res.json({ success: true });
   });
   app2.get("/api/profile/:id/posts", requireAuth2, async (req, res) => {
-    const posts = await storage.getUserPosts(req.params.id);
+    const posts = await storage.getUserPosts(params(req).id);
     return res.json(posts);
   });
   app2.get("/api/threads", requireAuth2, async (req, res) => {
@@ -1732,16 +1934,16 @@ async function registerRoutes(app2) {
   });
   app2.get("/api/threads/:id/messages", requireAuth2, async (req, res) => {
     const userId = req.session.userId;
-    const inThread = await storage.isUserInThread(userId, req.params.id);
+    const inThread = await storage.isUserInThread(userId, params(req).id);
     if (!inThread) {
       return res.status(403).json({ message: "Not a participant of this thread" });
     }
-    const msgs = await storage.getMessages(req.params.id, 50, userId);
-    const senderIds = await storage.markMessagesRead(req.params.id, userId);
+    const msgs = await storage.getMessages(params(req).id, 50, userId);
+    const senderIds = await storage.markMessagesRead(params(req).id, userId);
     for (const senderId of senderIds) {
       broadcastToUser(senderId, {
         type: "messages_read",
-        threadId: req.params.id,
+        threadId: params(req).id,
         readByUserId: userId
       });
     }
@@ -1757,7 +1959,7 @@ async function registerRoutes(app2) {
   });
   app2.post("/api/threads/:id/messages", requireAuth2, async (req, res) => {
     const userId = req.session.userId;
-    const threadId = req.params.id;
+    const threadId = params(req).id;
     const inThread = await storage.isUserInThread(userId, threadId);
     if (!inThread) {
       return res.status(403).json({ message: "Not a participant of this thread" });
@@ -1820,7 +2022,7 @@ async function registerRoutes(app2) {
   });
   app2.post("/api/threads/:threadId/messages/:messageId/open", requireAuth2, async (req, res) => {
     const userId = req.session.userId;
-    const { threadId, messageId } = req.params;
+    const { threadId, messageId } = params(req);
     const inThread = await storage.isUserInThread(userId, threadId);
     if (!inThread) {
       return res.status(403).json({ message: "Not a participant of this thread" });
@@ -1849,6 +2051,7 @@ async function registerRoutes(app2) {
       if (!dataUri) {
         return res.status(404).json({ message: "Photo file not found" });
       }
+      scheduleViewOnceDeletion(msg.mediaUrl);
       return res.json({ mediaUrl: dataUri });
     }
     return res.json({ mediaUrl: msg.mediaUrl });
@@ -1862,19 +2065,19 @@ async function registerRoutes(app2) {
     const kind = req.query.kind === "memes" ? "memes" : "gifs";
     const searchQuery = q || (kind === "memes" ? "meme reaction" : "");
     try {
-      const params = new URLSearchParams({
+      const params2 = new URLSearchParams({
         api_key: apiKey,
         limit: "24",
         rating: "pg-13"
       });
       let endpoint;
       if (searchQuery) {
-        params.set("q", searchQuery);
+        params2.set("q", searchQuery);
         endpoint = "https://api.giphy.com/v1/gifs/search";
       } else {
         endpoint = "https://api.giphy.com/v1/gifs/trending";
       }
-      const giphyRes = await fetch(`${endpoint}?${params.toString()}`);
+      const giphyRes = await fetch(`${endpoint}?${params2.toString()}`);
       if (!giphyRes.ok) {
         return res.status(502).json({ message: "GIPHY request failed" });
       }
@@ -1892,7 +2095,7 @@ async function registerRoutes(app2) {
   });
   app2.delete("/api/threads/:threadId/messages/:messageId", requireAuth2, async (req, res) => {
     const userId = req.session.userId;
-    const { threadId, messageId } = req.params;
+    const { threadId, messageId } = params(req);
     const inThread = await storage.isUserInThread(userId, threadId);
     if (!inThread) {
       return res.status(403).json({ message: "Not a participant of this thread" });
@@ -1921,7 +2124,7 @@ async function registerRoutes(app2) {
   });
   app2.post("/api/buddies/:id", requireAuth2, async (req, res) => {
     const userId = req.session.userId;
-    const buddyId = req.params.id;
+    const buddyId = params(req).id;
     if (userId === buddyId) {
       return res.status(400).json({ message: "Cannot add yourself" });
     }
@@ -1930,7 +2133,7 @@ async function registerRoutes(app2) {
   });
   app2.delete("/api/buddies/:id", requireAuth2, async (req, res) => {
     const userId = req.session.userId;
-    const buddyId = req.params.id;
+    const buddyId = params(req).id;
     await storage.removeBuddy(userId, buddyId);
     return res.json({ success: true });
   });
@@ -1974,18 +2177,18 @@ async function registerRoutes(app2) {
   });
   app2.post("/api/feed/:id/view", requireAuth2, async (req, res) => {
     const userId = req.session.userId;
-    await storage.recordPostView(req.params.id, userId);
+    await storage.recordPostView(params(req).id, userId);
     return res.json({ success: true });
   });
   app2.post("/api/feed/:id/like", requireAuth2, async (req, res) => {
     const userId = req.session.userId;
-    await storage.likePost(req.params.id, userId);
-    await storage.awardKindnessForLike(req.params.id, userId);
+    await storage.likePost(params(req).id, userId);
+    await storage.awardKindnessForLike(params(req).id, userId);
     return res.json({ success: true });
   });
   app2.post("/api/feed/:id/comment", requireAuth2, async (req, res) => {
     const userId = req.session.userId;
-    const postId = req.params.id;
+    const postId = params(req).id;
     const { text: text2 } = req.body;
     if (!text2) {
       return res.status(400).json({ message: "text required" });
@@ -2017,7 +2220,7 @@ async function registerRoutes(app2) {
     return res.json({ success: true, comment: newComment });
   });
   app2.get("/api/feed/:id/comments", requireAuth2, async (req, res) => {
-    const comments = await storage.getPostComments(req.params.id);
+    const comments = await storage.getPostComments(params(req).id);
     return res.json(comments);
   });
   app2.post("/api/feed/:id/kindness", requireAuth2, async (req, res) => {
@@ -2027,7 +2230,7 @@ async function registerRoutes(app2) {
         return res.status(400).json({ message: "delta must be 10 or -10" });
       }
       const userId = req.session.userId;
-      const postId = req.params.id;
+      const postId = params(req).id;
       const userDelta = await storage.awardPostKindness(postId, userId, delta);
       const postOwner = await storage.getPostOwner(postId);
       if (postOwner) {
@@ -2065,7 +2268,7 @@ async function registerRoutes(app2) {
   });
   app2.get("/api/feed/:id/my-kindness", requireAuth2, async (req, res) => {
     const userId = req.session.userId;
-    const delta = await storage.getUserKindnessDelta(userId, "post", req.params.id);
+    const delta = await storage.getUserKindnessDelta(userId, "post", params(req).id);
     return res.json({ delta });
   });
   app2.post("/api/feed/comments/:id/kindness", requireAuth2, async (req, res) => {
@@ -2075,7 +2278,7 @@ async function registerRoutes(app2) {
         return res.status(400).json({ message: "delta must be 10 or -10" });
       }
       const userId = req.session.userId;
-      const commentId = req.params.id;
+      const commentId = params(req).id;
       const userDelta = await storage.awardCommentKindness(commentId, userId, delta);
       const commentInfo = await storage.getCommentOwnerAndPost(commentId);
       if (commentInfo) {
@@ -2104,7 +2307,7 @@ async function registerRoutes(app2) {
   });
   app2.get("/api/feed/comments/:id/my-kindness", requireAuth2, async (req, res) => {
     const userId = req.session.userId;
-    const delta = await storage.getUserKindnessDelta(userId, "comment", req.params.id);
+    const delta = await storage.getUserKindnessDelta(userId, "comment", params(req).id);
     return res.json({ delta });
   });
   app2.get("/api/kindness/history", requireAuth2, async (req, res) => {
@@ -2116,7 +2319,7 @@ async function registerRoutes(app2) {
     return res.json(notifs);
   });
   app2.post("/api/notifications/:id/read", requireAuth2, async (req, res) => {
-    await storage.markNotificationRead(req.params.id, req.session.userId);
+    await storage.markNotificationRead(params(req).id, req.session.userId);
     return res.json({ success: true });
   });
   app2.get("/api/notifications/unread-count", requireAuth2, async (req, res) => {
@@ -2378,6 +2581,7 @@ function setupErrorHandler(app2) {
   configureExpoAndLanding(app);
   const server = await registerRoutes(app);
   setupUploadRoutes(app);
+  startViewOnceCleanup();
   setupErrorHandler(app);
   const port = parseInt(process.env.PORT || "5000", 10);
   server.listen(

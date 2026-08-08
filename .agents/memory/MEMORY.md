@@ -1,0 +1,1 @@
+- [Direct to Talk voice design](direct-to-talk.md) — segmented audio over existing WS by design (Expo Go can't do WebRTC); server owns the speaker channel; realtime identity must come from the verified session.

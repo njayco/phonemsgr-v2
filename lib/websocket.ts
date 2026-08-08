@@ -52,6 +52,18 @@ export function sendNudge(threadId: string) {
   }
 }
 
+// --- Direct to Talk signaling helpers ---
+export function sendDtt(payload: { type: string; threadId: string; [key: string]: any }) {
+  if (wsInstance && wsInstance.readyState === WebSocket.OPEN) {
+    wsInstance.send(JSON.stringify(payload));
+  }
+}
+
+export function buildWsUrl(apiBaseUrl: string): string {
+  const scheme = apiBaseUrl.startsWith('https') ? 'wss' : 'ws';
+  return apiBaseUrl.replace(/^https?/, scheme).replace(/\/$/, '') + '/ws';
+}
+
 export function connectWebSocket(userId: string) {
   if (wsInstance && wsInstance.readyState === WebSocket.OPEN) {
     return;
@@ -62,12 +74,16 @@ export function connectWebSocket(userId: string) {
 
   try {
     const baseUrl = getApiUrl();
-    const wsUrl = baseUrl.replace(/^https?/, 'wss').replace(/\/$/, '') + '/ws';
+    // Match the WS scheme to the API origin: ws:// for plain-HTTP dev
+    // servers, wss:// for HTTPS — a hardcoded wss:// cannot connect to a
+    // local http:// backend.
+    const wsUrl = buildWsUrl(baseUrl);
 
     wsInstance = new WebSocket(wsUrl);
 
     wsInstance.onopen = () => {
-      wsInstance?.send(JSON.stringify({ type: 'auth', userId }));
+      // Identity comes from the session cookie on the handshake; the server
+      // rejects unauthenticated connections and ignores client-asserted IDs.
       setTimeout(() => {
         queryClient.invalidateQueries({ queryKey: ['/api/auth/me'] });
       }, 500);

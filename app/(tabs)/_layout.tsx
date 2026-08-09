@@ -9,8 +9,9 @@ import React from "react";
 import { useQuery } from "@tanstack/react-query";
 import Colors from "@/constants/colors";
 import { useAuth } from "@/lib/auth-context";
-import { connectWebSocket, disconnectWebSocket } from "@/lib/websocket";
+import { connectWebSocket, disconnectWebSocket, onWsEvent, offWsEvent } from "@/lib/websocket";
 import { setupNotificationListeners } from "@/lib/push-notifications";
+import { playBeamSound, unloadBeamSound } from "@/lib/beam-sound";
 
 function NativeTabLayout() {
   return (
@@ -159,7 +160,17 @@ export default function TabLayout() {
         }
       });
 
+      // Play the Beam sound for every incoming message while the app is in the
+      // foreground. The server only sends new_message to recipients, so no
+      // sender-filtering is needed here.
+      const handleIncomingMessage = () => {
+        playBeamSound();
+      };
+      onWsEvent('new_message', handleIncomingMessage);
+
       return () => {
+        offWsEvent('new_message', handleIncomingMessage);
+        unloadBeamSound();
         disconnectWebSocket();
         if (cleanupNotifs && typeof cleanupNotifs === 'object' && 'then' in cleanupNotifs) {
           (cleanupNotifs as Promise<(() => void) | undefined>).then(fn => fn?.());
